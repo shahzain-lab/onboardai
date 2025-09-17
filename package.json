@@ -1,0 +1,22 @@
+{
+  "name": "onboardai",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "frontend": "cd frontend && npm run dev",
+    "backend": "cd backend && uv run uvicorn main:app --reload --app-dir src"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shahzain-lab/onboardai.git"
+  },
+  "keywords": [
+    "."
+  ],
+  "author": "shahzain-lab",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/shahzain-lab/onboardai/issues"
+  },
+  "homepage": "https://github.com/shahzain-lab/onboardai#readme"
+}
