@@ -3,15 +3,24 @@
 # ============================================================================
 
 import json
+import os
+import hmac
+import hashlib
+import time
+import urllib.parse
 from typing import Dict, Any
+from pydantic import BaseModel
 from datetime import datetime
 from contextlib import asynccontextmanager
 from config.slack_client import slack_client
 from fastapi.middleware.cors import CORSMiddleware
 from services.workflow_graph import workflow_graph
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request, Form
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from config.pydantic_models import SlackEventRequest, SlackCommandRequest,StandupRequest, MeetingRequest, QARequest, OnboardingRequest, TaskUpdate
+from config.env_config import config as env
+
+SLACK_SIGNING_SECRET = env.SLACK_SIGNING_SECRET
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -43,6 +52,43 @@ app.add_middleware(
 # ============================================================================
 security = HTTPBearer()
 
+class SlackChallenge(BaseModel):
+    token: str
+    challenge: str
+    type: str
+
+# Helper to cache body so multiple reads don't consume
+async def get_cached_body(request: Request) -> bytes:
+    if not hasattr(request, "_cached_body"):
+        request._cached_body = await request.body()
+    return request._cached_body
+
+def verify_slack_request(request: Request, body: bytes):
+    timestamp = request.headers.get("X-Slack-Request-Timestamp")
+    slack_signature = request.headers.get("X-Slack-Signature")
+
+    if not timestamp or not slack_signature:
+        raise HTTPException(status_code=400, detail="Missing Slack headers")
+
+    # Prevent replay attacks (within 5 minutes)
+    try:
+        req_ts = int(timestamp)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid timestamp")
+
+    if abs(time.time() - req_ts) > 60 * 5:
+        raise HTTPException(status_code=400, detail="Request too old")
+
+    sig_basestring = f"v0:{timestamp}:{body.decode('utf-8')}".encode("utf-8")
+    my_signature = "v0=" + hmac.new(
+        SLACK_SIGNING_SECRET.encode("utf-8"),
+        sig_basestring,
+        hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(my_signature, slack_signature):
+        raise HTTPException(status_code=400, detail="Invalid Slack signature")
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Simple JWT validation (implement your own logic)"""
     token = credentials.credentials
@@ -54,8 +100,19 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 # ============================================================================
 
 @app.get("/")
-def helloApp():
-    return "Hello World"
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "AI Workplace Assistant is running!",
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "endpoints": {
+            "slack_commands": "/webhook/slack/commands",
+            "slack_events": "/webhook/slack/events", 
+            "health": "/api/health",
+            "qa": "/api/qa/query"
+        }
+    }
 
 @app.post("/webhook/slack/events")
 async def slack_events(event_data: SlackEventRequest, background_tasks: BackgroundTasks):
@@ -75,58 +132,50 @@ async def slack_events(event_data: SlackEventRequest, background_tasks: Backgrou
         return {"challenge": event_data.dict().get("challenge", "ok")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/slack/events")
+async def slack_events(challenge_data: SlackChallenge):
+    return {"challenge": challenge_data.challenge}
+
 
 @app.post("/webhook/slack/commands")
-async def slack_commands(command_data: SlackCommandRequest):
-    """Handle Slack slash commands"""
-    try:
-        command = command_data.command
-        text = command_data.text
-        user_id = command_data.user_id
-        
-        # Route commands to appropriate workflows
-        if command == "/standup":
-            result = await workflow_graph.execute_workflow(
-                "standup", 
-                {"command_text": text, "user_id": user_id},
-                user_id
-            )
-        elif command == "/onboard":
-            result = await workflow_graph.execute_workflow(
-                "onboarding",
-                {"command_text": text, "user_id": user_id},
-                user_id
-            )
-        elif command == "/ask":
-            result = await workflow_graph.execute_workflow(
-                "qa",
-                {"question": text, "user_id": user_id},
-                user_id
-            )
-        else:
-            result = {"message": f"Unknown command: {command}"}
-        
-        return {
-            "response_type": "in_channel",
-            "text": f"Processing {command}...",
-            "attachments": [
-                {
-                    "color": "good",
-                    "text": json.dumps(result, indent=2)
-                }
-            ]
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def slack_commands(request: Request):
+    # 1. Get body (cached)
+    body = await get_cached_body(request)
 
-@app.post("/webhook/slack/actions")
-async def slack_actions(action_data: Dict[str, Any]):
-    """Handle Slack interactive components"""
-    try:
-        # Process button clicks, menu selections, etc.
-        return {"message": "Action processed"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # 2. Verify signature
+    verify_slack_request(request, body)
+
+    # 3. Parse form data from raw body
+    # Slack sends application/x-www-form-urlencoded
+    form_data = urllib.parse.parse_qs(body.decode('utf-8'))
+
+    command = form_data.get("command", [""])[0]
+    text = form_data.get("text", [""])[0]
+    user_id = form_data.get("user_id", [""])[0]
+    user_name = form_data.get("user_name", [""])[0]
+    channel_id = form_data.get("channel_id", [""])[0]
+
+    print(f"✅ Slack command: {command}, text={text}, user={user_name} ({user_id}), channel={channel_id}")
+
+    # Route commands
+    if command == "/standup":
+        result = {"message": f"Standup started for {user_name} ({user_id})"}
+    elif command == "/onboard":
+        result = {"message": f"Onboarding started for {user_name}"}
+    elif command == "/ask":
+        result = {"message": f"Answering question: {text}"}
+    else:
+        result = {"message": f"Unknown command: {command}"}
+
+    # Return response
+    return {
+        "response_type": "in_channel",
+        "text": f"Processing {command}...",
+        "attachments": [
+            {"color": "good", "text": json.dumps(result, indent=2)}
+        ]
+    }
 
 @app.post("/webhook/discord/events")
 async def discord_events(event_data: Dict[str, Any]):
