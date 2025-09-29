@@ -11,6 +11,7 @@ load_dotenv(dotenv_path=DOTENV_PATH)
 class Config:
     # LLM
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
     # Slack
     SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID")

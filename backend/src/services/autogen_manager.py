@@ -7,6 +7,7 @@ from typing import Dict, Any
 from config.env_config import config as env
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
+from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.messages import TextMessage
 
@@ -15,8 +16,8 @@ class AutoGenManager:
 
         # Initialize OpenAI client for AutoGen
         self.model_client = OpenAIChatCompletionClient(
-            model="gpt-4o",
-            api_key=env.OPENAI_API_KEY,
+            model="gemini-2.0-flash",
+            api_key=env.GEMINI_API_KEY,
         )
         
         self.setup_agents()
