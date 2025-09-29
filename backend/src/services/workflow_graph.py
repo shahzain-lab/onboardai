@@ -34,6 +34,7 @@ class WorkflowGraph:
         async def standup_node_handler(state: State) -> State:
             """Handle standup workflow"""
             result = await self.autogen_manager.process_workflow("standup", state.metadata)
+            print("GRPAH RESULT", result)
             state.metadata.update({"standup_result": result})
             return state
         

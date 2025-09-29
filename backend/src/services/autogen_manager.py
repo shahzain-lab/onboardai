@@ -118,6 +118,8 @@ class AutoGenManager:
                 "onboarding": [self.coordinator, self.onboarding_agent],
                 "transcription": [self.coordinator, self.meeting_agent],
             }
+
+            print("Agent Maps...", agents_map)
             
             selected_agents = agents_map.get(workflow_type, [self.coordinator])
             
@@ -126,11 +128,13 @@ class AutoGenManager:
                 content=f"Process {workflow_type} workflow with the following data:\n{json.dumps(data, indent=2)}",
                 source="user"
             )
+
+            print(initial_message.content, selected_agents)
             
            # Process with multiple agents if needed
             if len(selected_agents) > 1:
 
-                termination = MaxMessageTermination(5)
+                termination = MaxMessageTermination(2)
                 # Create a round-robin group chat for multi-agent collaboration
                 team = RoundRobinGroupChat(selected_agents, termination_condition=termination)
 
@@ -138,6 +142,9 @@ class AutoGenManager:
                 result = await team.run(
                     task=initial_message.content, 
                 )
+
+                print("Messages=>", result)
+
                 # Extract the final response
                 final_response = result.messages[-1].content if result.messages else "No response generated"
 

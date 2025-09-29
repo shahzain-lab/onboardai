@@ -52,6 +52,37 @@ app.add_middleware(
 # ============================================================================
 security = HTTPBearer()
 
+def format_slack_response(
+    command: str,
+    user_name: str,
+    user_id: str,
+    text: str,
+    workflow_result: dict | None = None
+) -> str:
+    """
+    Format Slack responses for different commands in a clean, reusable way.
+    """
+    # Safely extract metadata
+    metadata = (workflow_result or {}).get("metadata", {})
+
+    if command == "/standup":
+        standup_result = metadata.get("standup_result", {})
+        final_text = standup_result.get("result") or "Standup update recorded."
+        return f"📌 Standup update from *{user_name}*: {text}\n✅ {final_text.strip()}"
+
+    elif command == "/onboard":
+        onboard_result = metadata.get("onboarding_result", {})
+        final_text = onboard_result.get("result") or "Onboarding process started."
+        return f"🚀 Onboarding update for *{user_name}*\n✅ {final_text.strip()}"
+
+    elif command == "/ask":
+        qa_result = metadata.get("qa_result", {})
+        final_text = qa_result.get("result") or "Answer processed."
+        return f"💡 Question from *{user_name}*: {text}\n🤖 {final_text.strip()}"
+
+    else:
+        return f"⚠️ Unknown command: {command} by {user_name} ({user_id})"
+
 class SlackChallenge(BaseModel):
     token: str
     challenge: str
@@ -138,48 +169,40 @@ async def slack_events(challenge_data: SlackChallenge):
     return {"challenge": challenge_data.challenge}
 
 
-@app.post("/webhook/slack/commands")
+app.post("/webhook/slack/commands")
 async def slack_commands(request: Request):
-    # 1. Get body (cached)
     body = await get_cached_body(request)
-
-    # 2. Verify signature
     verify_slack_request(request, body)
-
-    # 3. Parse form data from raw body
-    # Slack sends application/x-www-form-urlencoded
     form_data = urllib.parse.parse_qs(body.decode('utf-8'))
 
     command = form_data.get("command", [""])[0]
     text = form_data.get("text", [""])[0]
     user_id = form_data.get("user_id", [""])[0]
     user_name = form_data.get("user_name", [""])[0]
-    channel_id = form_data.get("channel_id", [""])[0]
 
-    print(f"✅ Slack command: {command}, text={text}, user={user_name} ({user_id}), channel={channel_id}")
-
-    # Route commands
+    # Route workflows
+    workflow_result = None
     if command == "/standup":
-        result = await workflow_graph.execute_workflow(
-            "standup",
-            {"command_text": text, "user_id": user_id},
-            user_id
+        workflow_result = await workflow_graph.execute_workflow(
+            "standup", {"command_text": text, "user_id": user_id}, user_id
         )
-        # result = {"message": f"Standup started for {user_name} ({user_id})"}
     elif command == "/onboard":
-        result = {"message": f"Onboarding started for {user_name}"}
+        workflow_result = await workflow_graph.execute_workflow(
+            "onboarding", {"command_text": text, "user_id": user_id}, user_id
+        )
     elif command == "/ask":
-        result = {"message": f"Answering question: {text}"}
-    else:
-        result = {"message": f"Unknown command: {command}"}
+        workflow_result = await workflow_graph.execute_workflow(
+            "qa", {"question": text, "user_id": user_id}, user_id
+        )
 
-    # Return response
+    # Format Slack response
+    slack_text = format_slack_response(command, user_name, user_id, text, workflow_result)
+
+    print("Final Slack Response => ", slack_text)
+
     return {
         "response_type": "in_channel",
-        "text": f"Processing {command}...",
-        "attachments": [
-            {"color": "good", "text": json.dumps(result, indent=2)}
-        ]
+        "text": slack_text
     }
 
 @app.post("/webhook/discord/events")
