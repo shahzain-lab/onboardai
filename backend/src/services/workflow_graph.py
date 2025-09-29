@@ -33,32 +33,32 @@ class WorkflowGraph:
         
         async def standup_node_handler(state: State) -> State:
             """Handle standup workflow"""
-            # result = await self.autogen_manager.process_workflow("standup", state.metadata)
-            # state.metadata.update({"standup_result": result})
+            result = await self.autogen_manager.process_workflow("standup", state.metadata)
+            state.metadata.update({"standup_result": result})
             return state
         
         async def meeting_node_handler(state: State) -> State:
             """Handle meeting processing workflow"""
-            # result = await self.autogen_manager.process_workflow("meeting", state.metadata)
-            # state.metadata.update({"meeting_result": result})
+            result = await self.autogen_manager.process_workflow("meeting", state.metadata)
+            state.metadata.update({"meeting_result": result})
             return state
         
         async def qa_node_handler(state: State) -> State:
             """Handle Q&A workflow"""
-            # result = await self.autogen_manager.process_workflow("qa", state.metadata)
-            # state.metadata.update({"qa_result": result})
+            result = await self.autogen_manager.process_workflow("qa", state.metadata)
+            state.metadata.update({"qa_result": result})
             return state
         
         async def onboarding_node_handler(state: State) -> State:
             """Handle onboarding workflow"""
-            # result = await self.autogen_manager.process_workflow("onboarding", state.metadata)
-            # state.metadata.update({"onboarding_result": result})
+            result = await self.autogen_manager.process_workflow("onboarding", state.metadata)
+            state.metadata.update({"onboarding_result": result})
             return state
         
         async def transcribe_node_handler(state: State) -> State:
             """Handle transcription workflow"""
-            # result = await self.autogen_manager.process_workflow("transcription", state.metadata)
-            # state.metadata.update({"transcription_result": result})
+            result = await self.autogen_manager.process_workflow("transcription", state.metadata)
+            state.metadata.update({"transcription_result": result})
             return state
         
         # Router functions
