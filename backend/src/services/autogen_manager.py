@@ -7,7 +7,7 @@ from typing import Dict, Any
 from config.env_config import config as env
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
-from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
+from autogen_agentchat.conditions import MaxMessageTermination
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.messages import TextMessage
 
@@ -127,26 +127,28 @@ class AutoGenManager:
                 source="user"
             )
             
-            # Process with multiple agents if needed
+           # Process with multiple agents if needed
             if len(selected_agents) > 1:
 
+                termination = MaxMessageTermination(5)
                 # Create a round-robin group chat for multi-agent collaboration
-                team = RoundRobinGroupChat(selected_agents)
-                
-                # Run the team collaboration
+                team = RoundRobinGroupChat(selected_agents, termination_condition=termination)
+
+                 # Run the team collaboration
                 result = await team.run(
-                    task=initial_message.content,
-                    termination_condition=lambda messages: len(messages) >= 5  # Limit rounds
+                    task=initial_message.content, 
                 )
-                
                 # Extract the final response
                 final_response = result.messages[-1].content if result.messages else "No response generated"
-                
+
             else:
                 # Single agent processing
                 agent = selected_agents[0]
                 response = await agent.on_messages([initial_message], cancellation_token=None)
-                final_response = response.chat_message.content if response.chat_message else "No response generated"
+                final_response = (
+                    response.chat_message.content if response.chat_message else "No response generated"
+                )
+
             
             return {
                 "status": "success",
