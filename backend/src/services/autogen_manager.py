@@ -1,191 +1,341 @@
 # ============================================================================
-# AUTOGEN CONFIGURATION
+# AGENTS MANAGER - OpenAI Agents SDK with Gemini + MCP
 # ============================================================================
 import json
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List
+
 from config.env_config import config as env
-from autogen_ext.models.openai import OpenAIChatCompletionClient
-from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
-from autogen_agentchat.conditions import MaxMessageTermination
-from autogen_agentchat.teams import RoundRobinGroupChat
-from autogen_agentchat.messages import TextMessage
+from services.openai_agents import MCPToolManager, GeminiClient
 
-class AutoGenManager:
-    def __init__(self):
+# OpenAI Agents SDK
+from agents import Agent, Runner
+from agents.handoffs import Handoff
 
-        # Initialize OpenAI client for AutoGen
-        self.model_client = OpenAIChatCompletionClient(
-            model="gemini-2.0-flash",
-            api_key=env.GEMINI_API_KEY,
-        )
-        
-        self.setup_agents()
+
+class AgentsManager:
+    """
+    Manages OpenAI Agents SDK agents with Gemini backend and MCP tools.
+    """
     
-    def setup_agents(self):
-        """Setup specialized agents for different workflows"""
+    def __init__(self):
+        self.gemini_api_key = env.GEMINI_API_KEY
+        self.model = "gemini-2.0-flash-exp"
         
-        # Coordinator Agent - Main orchestrator
-        self.coordinator = AssistantAgent(
-            name="coordinator",
-            description="Main coordinator for workplace AI assistant that routes requests to specialists",
-            model_client=self.model_client,
-            system_message="""You are the main coordinator for a workplace AI assistant.
-            Your role is to:
-            1. Analyze incoming requests and route them to appropriate specialists
-            2. Ensure proper workflow execution
-            3. Coordinate between different agents
-            4. Provide final responses to users
-            
-            Available workflows: standup, meeting, qa, onboarding, transcription
-            Be concise and actionable in your responses.""",
+        # Initialize components
+        self.gemini_client = GeminiClient(self.gemini_api_key, self.model)
+        self.mcp_manager = MCPToolManager()
+        self.runner = Runner()
+        
+        # Agents
+        self.coordinator = None
+        self.standup_agent = None
+        self.meeting_agent = None
+        self.qa_agent = None
+        self.onboarding_agent = None
+        
+        # Store conversation histories
+        self.conversation_histories = {}
+        self._initialized = False
+    
+    async def initialize(self):
+        """Initialize MCP servers and create agents"""
+        if self._initialized:
+            return
+        
+        print("Initializing MCP servers...")
+        await self.mcp_manager.initialize_mcp_servers()
+        
+        print("Creating OpenAI Agents with Gemini backend + MCP tools...")
+        await self._setup_agents()
+        
+        self._initialized = True
+        print("OpenAI Agents SDK + Gemini + MCP system ready!")
+    
+    async def _setup_agents(self):
+        """Setup agents using OpenAI Agents SDK with Gemini and MCP tools"""
+        
+        # Get tools from MCP for each agent
+        all_tools = self.mcp_manager.get_tools_for_agent()
+        slack_db_tools = self.mcp_manager.get_tools_for_agent(["slack", "database"])
+        google_slack_db_tools = self.mcp_manager.get_tools_for_agent(["google", "slack", "database"])
+        db_fs_tools = self.mcp_manager.get_tools_for_agent(["database", "filesystem"])
+        
+        # Create handoffs between agents
+        handoff_to_standup = Handoff(
+            agent_name="standup_specialist",
+            description="Transfer to standup specialist for processing daily updates"
+        )
+        handoff_to_meeting = Handoff(
+            agent_name="meeting_specialist",
+            description="Transfer to meeting specialist for processing meeting transcripts"
+        )
+        handoff_to_qa = Handoff(
+            agent_name="qa_specialist",
+            description="Transfer to QA specialist for knowledge base queries"
+        )
+        handoff_to_onboarding = Handoff(
+            agent_name="onboarding_specialist",
+            description="Transfer to onboarding specialist for new hire workflows"
         )
         
-        # Standup Agent - Handles daily standups
-        self.standup_agent = AssistantAgent(
+        # 1. Coordinator Agent - Main orchestrator
+        self.coordinator = Agent(
+            name="coordinator",
+            model=self.model,
+            instructions="""You are the main coordinator for a workplace AI assistant.
+            
+            You have access to ALL tools via MCP:
+            - Slack: Send messages, read channels, manage users
+            - Google Calendar: Schedule meetings, check availability
+            - Database: Query and store information
+            - Filesystem: Read documentation
+            
+            Your responsibilities:
+            1. Analyze incoming requests and determine the best approach
+            2. Use tools directly for simple tasks
+            3. Hand off complex tasks to specialist agents using the handoff functions
+            4. Coordinate between multiple agents when needed
+            
+            Available specialists (use handoffs):
+            - standup_specialist: For daily standup processing
+            - meeting_specialist: For meeting transcripts and summaries
+            - qa_specialist: For knowledge base queries
+            - onboarding_specialist: For new hire onboarding
+            
+            Be concise and actionable. Complete tasks efficiently.""",
+            functions=all_tools,
+            handoffs=[handoff_to_standup, handoff_to_meeting, handoff_to_qa, handoff_to_onboarding]
+        )
+        
+        # 2. Standup Agent - Specialized for standups
+        self.standup_agent = Agent(
             name="standup_specialist",
-            description="Specialist for handling daily standups and team progress tracking",
-            model_client=self.model_client,
-            system_message="""You are a standup specialist. You help teams with:
-            1. Collecting daily standup updates from team members
-            2. Summarizing team progress and identifying patterns
-            3. Identifying blockers and potential risks
-            4. Creating actionable items from standup discussions
+            model=self.model,
+            instructions="""You are a standup specialist for team updates.
+            
+            You have access to:
+            - Slack: Send standup summaries and notifications
+            - Database: Store and retrieve standup data
+            
+            Your workflow:
+            1. Process standup data (yesterday, today, blockers)
+            2. Store in database using available MCP tools
+            3. Generate a clear, actionable summary
+            4. Send notifications to relevant team members via Slack
+            5. Identify any critical blockers that need attention
             
             Be concise, supportive, and focus on actionable insights.
-            Format your responses in a clear, structured way.""",
+            Format responses in a clear, structured way.""",
+            functions=slack_db_tools,
         )
         
-        # Meeting Agent - Handles meeting processing
-        self.meeting_agent = AssistantAgent(
-            name="meeting_specialist", 
-            description="Specialist for processing meeting transcripts and extracting insights",
-            model_client=self.model_client,
-            system_message="""You are a meeting specialist. You help with:
-            1. Processing meeting transcripts and recordings
-            2. Extracting key decisions, action items, and outcomes
-            3. Creating concise meeting summaries
-            4. Identifying follow-up tasks and ownership
+        # 3. Meeting Agent - Specialized for meetings
+        self.meeting_agent = Agent(
+            name="meeting_specialist",
+            model=self.model,
+            instructions="""You are a meeting specialist.
+            
+            You have access to:
+            - Google Calendar: Access meeting details and participants
+            - Slack: Send meeting summaries and notifications
+            - Database: Store meeting data and action items
+            
+            Your workflow:
+            1. Process meeting transcript
+            2. Extract key decisions, action items, and important discussions
+            3. Store everything in database with proper categorization
+            4. Send concise summary to all participants via Slack
+            5. Update calendar events if needed
             
             Focus on clarity, accuracy, and actionable outcomes.
             Always identify specific action items with clear ownership.""",
+            functions=google_slack_db_tools,
         )
         
-        # QA Agent - Handles knowledge queries
-        self.qa_agent = AssistantAgent(
+        # 4. QA Agent - Knowledge base specialist
+        self.qa_agent = Agent(
             name="qa_specialist",
-            description="Knowledge specialist for answering questions using company knowledge base",
-            model_client=self.model_client,
-            system_message="""You are a knowledge specialist. You help with:
-            1. Answering questions using available knowledge base and context
-            2. Providing accurate, contextual information to users
-            3. Suggesting related resources and documentation
-            4. Learning from interactions to improve responses
+            model=self.model,
+            instructions="""You are a knowledge specialist.
             
-            Be accurate, helpful, and cite sources when possible.
+            You have access to:
+            - Database: Search knowledge base and retrieve documents
+            - Filesystem: Read documentation files and resources
+            
+            Your workflow:
+            1. Understand the question thoroughly
+            2. Search database for relevant information
+            3. Read relevant documentation files if needed
+            4. Provide accurate, well-cited answers
+            5. Suggest related resources and follow-up topics
+            
+            Be accurate, helpful, and always cite your sources.
             If you don't know something, say so clearly and suggest alternatives.""",
+            functions=db_fs_tools,
         )
         
-        # Onboarding Agent - Handles new hire onboarding  
-        self.onboarding_agent = AssistantAgent(
+        # 5. Onboarding Agent - New hire specialist
+        self.onboarding_agent = Agent(
             name="onboarding_specialist",
-            description="Specialist for managing new hire onboarding processes and tasks",
-            model_client=self.model_client,
-            system_message="""You are an onboarding specialist. You help with:
-            1. Creating personalized onboarding plans for new hires
-            2. Tracking onboarding progress and completion status
-            3. Providing guidance and support to new team members
-            4. Ensuring smooth integration into the team and company culture
+            model=self.model,
+            instructions="""You are an onboarding specialist for new hires.
             
-            Be welcoming, organized, and thorough in your approach.
+            You have access to:
+            - Slack: Send welcome messages and communications
+            - Database: Store onboarding tasks and track progress
+            - Filesystem: Access onboarding documents and materials
+            
+            Your workflow:
+            1. Create personalized onboarding plan based on role
+            2. Send warm welcome message via Slack
+            3. Store all tasks in database with due dates
+            4. Provide onboarding resources and documentation
+            5. Track progress and send reminders
+            
+            Be welcoming, organized, and thorough.
             Break down complex processes into manageable steps.""",
-        )
-        
-        # User Proxy for human interaction
-        self.user_proxy = UserProxyAgent(
-            name="user_proxy",
-            description="Proxy agent for handling user interactions and inputs",
+            functions=all_tools,
         )
     
-    async def process_workflow(self, workflow_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process a workflow using appropriate agents"""
+    async def _run_agent_with_gemini(self, agent: Agent, messages: List[Dict]) -> str:
+        """Run an agent with Gemini as the LLM backend"""
         try:
-            # Select appropriate agents based on workflow type
-            agents_map = {
-                "standup": [self.coordinator, self.standup_agent],
-                "meeting": [self.coordinator, self.meeting_agent], 
-                "qa": [self.coordinator, self.qa_agent],
-                "onboarding": [self.coordinator, self.onboarding_agent],
-                "transcription": [self.coordinator, self.meeting_agent],
+            response = await self.gemini_client.generate_response(messages, agent.functions)
+            return response
+        except Exception as e:
+            return f"Error running agent: {str(e)}"
+    
+    async def process_workflow(self, workflow_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process workflow using OpenAI Agents SDK with Gemini backend.
+        Agents can hand off to each other as needed.
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        try:
+            # Select starting agent based on workflow type
+            agent_map = {
+                "standup": self.standup_agent,
+                "meeting": self.meeting_agent,
+                "qa": self.qa_agent,
+                "onboarding": self.onboarding_agent,
+                "transcription": self.meeting_agent,
             }
-
-            print("Agent Maps...", agents_map)
             
-            selected_agents = agents_map.get(workflow_type, [self.coordinator])
-            
-            # Create initial message
-            initial_message = TextMessage(
-                content=f"Process {workflow_type} workflow with the following data:\n{json.dumps(data, indent=2)}",
-                source="user"
-            )
-
-            print(initial_message.content, selected_agents)
-            
-           # Process with multiple agents if needed
-            if len(selected_agents) > 1:
-
-                termination = MaxMessageTermination(4)
-                # Create a round-robin group chat for multi-agent collaboration
-                team = RoundRobinGroupChat(selected_agents, termination_condition=termination)
-
-                 # Run the team collaboration
-                result = await team.run(
-                    task=initial_message.content, 
-                )
-
-                print("Messages=>", result)
-
-                # Extract the final response
-                final_response = result.messages[-1].content if result.messages else "No response generated"
-
+            # Start with coordinator for complex workflows, specialist for simple ones
+            if workflow_type in ["standup", "meeting", "onboarding", "transcription"]:
+                starting_agent = self.coordinator
             else:
-                # Single agent processing
-                agent = selected_agents[0]
-                response = await agent.on_messages([initial_message], cancellation_token=None)
-                final_response = (
-                    response.chat_message.content if response.chat_message else "No response generated"
-                )
+                starting_agent = agent_map.get(workflow_type, self.qa_agent)
+            
+            # Create task description
+            task_description = f"""Process {workflow_type} workflow.
 
+Data:
+{json.dumps(data, indent=2)}
+
+Please process this using your available MCP tools. Use handoffs to specialist agents if needed."""
+            
+            # Build conversation history
+            conversation_id = f"{workflow_type}_{datetime.now().timestamp()}"
+            messages = [
+                {"role": "user", "content": task_description}
+            ]
+            
+            # Run agent with Gemini
+            response = await self._run_agent_with_gemini(starting_agent, messages)
+            
+            # Store conversation
+            self.conversation_histories[conversation_id] = {
+                "messages": messages + [{"role": "assistant", "content": response}],
+                "agent": starting_agent.name,
+                "workflow_type": workflow_type
+            }
             
             return {
                 "status": "success",
                 "workflow_type": workflow_type,
-                "result": final_response,
-                "agent_used": [agent.name for agent in selected_agents],
+                "result": response,
+                "agent_used": starting_agent.name,
+                "conversation_id": conversation_id,
+                "architecture": "OpenAI Agents SDK → Gemini → MCP",
                 "timestamp": datetime.now().isoformat()
             }
             
         except Exception as e:
             return {
-                "status": "error", 
+                "status": "error",
                 "workflow_type": workflow_type,
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             }
     
     async def process_simple_query(self, query: str, context: Dict[str, Any] = None) -> str:
-        """Process a simple query with the coordinator agent"""
+        """Process a simple query with the coordinator"""
+        if not self._initialized:
+            await self.initialize()
+        
         try:
             context_str = f"\nContext: {json.dumps(context)}" if context else ""
-            message = TextMessage(
-                content=f"{query}{context_str}",
-                source="user"
-            )
+            messages = [
+                {"role": "user", "content": f"{query}{context_str}"}
+            ]
             
-            response = await self.coordinator.on_messages([message], cancellation_token=None)
-            return response.chat_message.content if response.chat_message else "No response generated"
+            response = await self._run_agent_with_gemini(self.coordinator, messages)
+            return response
             
         except Exception as e:
             return f"Error processing query: {str(e)}"
+    
+    async def continue_conversation(self, conversation_id: str, message: str) -> str:
+        """Continue an existing conversation"""
+        if not self._initialized:
+            await self.initialize()
+        
+        try:
+            if conversation_id not in self.conversation_histories:
+                return "Conversation not found"
+            
+            history = self.conversation_histories[conversation_id]
+            agent_name = history["agent"]
+            
+            # Get the agent
+            agent_attr_map = {
+                "coordinator": self.coordinator,
+                "standup_specialist": self.standup_agent,
+                "meeting_specialist": self.meeting_agent,
+                "qa_specialist": self.qa_agent,
+                "onboarding_specialist": self.onboarding_agent,
+            }
+            agent = agent_attr_map.get(agent_name, self.coordinator)
+            
+            # Add user message
+            history["messages"].append({"role": "user", "content": message})
+            
+            # Generate response
+            response = await self._run_agent_with_gemini(agent, history["messages"])
+            
+            # Add assistant response
+            history["messages"].append({"role": "assistant", "content": response})
+            
+            return response
+            
+        except Exception as e:
+            return f"Error continuing conversation: {str(e)}"
 
-autogen_manager = AutoGenManager()
+
+# ============================================================================
+# SINGLETON INSTANCE
+# ============================================================================
+
+_agents_manager_instance = None
+
+async def get_agents_manager() -> AgentsManager:
+    """Get or create agents manager singleton"""
+    global _agents_manager_instance
+    if _agents_manager_instance is None:
+        _agents_manager_instance = AgentsManager()
+        await _agents_manager_instance.initialize()
+    return _agents_manager_instance

@@ -187,7 +187,7 @@ async def slack_commands(request: Request):
             "standup", {"command_text": text, "user_id": user_id}, user_id
         )
     elif command == "/onboard":
-        workflow_result = await workflow_graph.execute_workflow(
+        workflow_result = await workflow_graph(
             "onboarding", {"command_text": text, "user_id": user_id}, user_id
         )
     elif command == "/ask":
