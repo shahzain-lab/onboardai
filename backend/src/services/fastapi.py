@@ -169,7 +169,7 @@ async def slack_events(challenge_data: SlackChallenge):
     return {"challenge": challenge_data.challenge}
 
 
-app.post("/webhook/slack/commands")
+@app.post("/webhook/slack/commands")
 async def slack_commands(request: Request):
     body = await get_cached_body(request)
     verify_slack_request(request, body)

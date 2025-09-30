@@ -134,7 +134,7 @@ class AutoGenManager:
            # Process with multiple agents if needed
             if len(selected_agents) > 1:
 
-                termination = MaxMessageTermination(2)
+                termination = MaxMessageTermination(4)
                 # Create a round-robin group chat for multi-agent collaboration
                 team = RoundRobinGroupChat(selected_agents, termination_condition=termination)
 
