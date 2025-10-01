@@ -303,6 +303,7 @@ class WorkflowGraph:
             
             print(f"\n{'='*60}")
             print(f"Workflow Completed: {workflow_type}")
+            print(f"Workflow Result: {result}")
             print(f"{'='*60}\n")
             
             return {
