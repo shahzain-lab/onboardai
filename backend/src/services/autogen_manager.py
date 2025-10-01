@@ -103,7 +103,7 @@ class AgentsManager:
             - onboarding_specialist: For new hire onboarding
             
             Be concise and actionable. Complete tasks efficiently.""",
-            functions=all_tools,
+            mcp_servers=all_tools,
             handoffs=[handoff_to_standup, handoff_to_meeting, handoff_to_qa, handoff_to_onboarding]
         )
         
@@ -126,7 +126,7 @@ class AgentsManager:
             
             Be concise, supportive, and focus on actionable insights.
             Format responses in a clear, structured way.""",
-            functions=slack_db_tools,
+            mcp_servers=slack_db_tools,
         )
         
         # 3. Meeting Agent - Specialized for meetings
@@ -149,7 +149,7 @@ class AgentsManager:
             
             Focus on clarity, accuracy, and actionable outcomes.
             Always identify specific action items with clear ownership.""",
-            functions=google_slack_db_tools,
+            mcp_servers=google_slack_db_tools,
         )
         
         # 4. QA Agent - Knowledge base specialist
@@ -171,7 +171,7 @@ class AgentsManager:
             
             Be accurate, helpful, and always cite your sources.
             If you don't know something, say so clearly and suggest alternatives.""",
-            functions=db_fs_tools,
+            mcp_servers=db_fs_tools,
         )
         
         # 5. Onboarding Agent - New hire specialist
@@ -194,7 +194,7 @@ class AgentsManager:
             
             Be welcoming, organized, and thorough.
             Break down complex processes into manageable steps.""",
-            functions=all_tools,
+            mcp_servers=all_tools,
         )
     
     async def _run_agent_with_gemini(self, agent: Agent, messages: List[Dict]) -> str:

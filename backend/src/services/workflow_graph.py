@@ -3,7 +3,7 @@
 # ============================================================================
 from services.autogen_manager import get_agents_manager, AgentsManager
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 from config.pydantic_models import State
 from typing import Dict, Any
 
@@ -269,7 +269,7 @@ class WorkflowGraph:
         graph_builder.add_edge("meeting_node", END)
         
         # Compile graph with memory checkpointing
-        checkpointer = MemorySaver()
+        checkpointer = InMemorySaver()
         compiled_graph = graph_builder.compile(checkpointer=checkpointer)
         
         return compiled_graph
@@ -299,7 +299,7 @@ class WorkflowGraph:
         
         try:
             # Execute the graph
-            result = await self.graph.ainvoke(state)
+            result = await self.graph.ainvoke(state, config= {"configurable": {"thread_id": "1"}})
             
             print(f"\n{'='*60}")
             print(f"Workflow Completed: {workflow_type}")

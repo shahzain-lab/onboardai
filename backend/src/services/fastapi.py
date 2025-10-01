@@ -194,6 +194,8 @@ async def slack_commands(request: Request):
         workflow_result = await workflow_graph.execute_workflow(
             "qa", {"question": text, "user_id": user_id}, user_id
         )
+    
+    print("workflow_result", workflow_result)
 
     # Format Slack response
     slack_text = format_slack_response(command, user_name, user_id, text, workflow_result)
