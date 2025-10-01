@@ -32,6 +32,7 @@ class AgentsManager:
         self.meeting_agent = None
         self.qa_agent = None
         self.onboarding_agent = None
+        self.summarizer_agent = None
         
         # Store conversation histories
         self.conversation_histories = {}
@@ -123,7 +124,7 @@ class AgentsManager:
             3. Generate a clear, actionable summary
             4. Send notifications to relevant team members via Slack
             5. Identify any critical blockers that need attention
-            
+
             Be concise, supportive, and focus on actionable insights.
             Format responses in a clear, structured way.""",
             mcp_servers=slack_db_tools,
@@ -139,7 +140,7 @@ class AgentsManager:
             - Google Calendar: Access meeting details and participants
             - Slack: Send meeting summaries and notifications
             - Database: Store meeting data and action items
-            
+         
             Your workflow:
             1. Process meeting transcript
             2. Extract key decisions, action items, and important discussions
@@ -196,11 +197,28 @@ class AgentsManager:
             Break down complex processes into manageable steps.""",
             mcp_servers=all_tools,
         )
+        
+        # 5. Onboarding Agent - New hire specialist
+        self.summarizer_agent = Agent(
+            name="summarizer_specialist",
+            model=self.model,
+            instructions="""You are a summarization specialist. Your ONLY job is to create ultra-concise, single-line summaries.
+
+                Rules:
+                1. Generate ONLY ONE LINE summary (maximum 150 characters)
+                2. Be extremely concise and to the point
+                3. Focus on the key outcome or result
+                4. Remove all reasoning, explanations, and process details
+                5. Use present tense, active voice
+                6. NO bullet points, NO multiple sentences, NO elaboration""",
+            mcp_servers=all_tools,
+        )
+        
     
     async def _run_agent_with_gemini(self, agent: Agent, messages: List[Dict]) -> str:
         """Run an agent with Gemini as the LLM backend"""
         try:
-            response = await self.gemini_client.generate_response(messages, agent.functions)
+            response = await self.gemini_client.generate_response(messages, agent.mcp_servers)
             return response
         except Exception as e:
             return f"Error running agent: {str(e)}"
@@ -246,6 +264,12 @@ Please process this using your available MCP tools. Use handoffs to specialist a
             # Run agent with Gemini
             response = await self._run_agent_with_gemini(starting_agent, messages)
             
+            # Generate concise summary using summarizer agent
+            summary_messages = [
+                {"role": "user", "content": f"Summarize this in ONE LINE (max 150 chars):\n\n{response}"}
+            ]
+            summary = await self._run_agent_with_gemini(self.summarizer_agent, summary_messages)
+            
             # Store conversation
             self.conversation_histories[conversation_id] = {
                 "messages": messages + [{"role": "assistant", "content": response}],
@@ -256,7 +280,8 @@ Please process this using your available MCP tools. Use handoffs to specialist a
             return {
                 "status": "success",
                 "workflow_type": workflow_type,
-                "result": response,
+                "result": response,  # Full detailed response
+                "summary": summary.strip(),  # Concise 1-line summary
                 "agent_used": starting_agent.name,
                 "conversation_id": conversation_id,
                 "architecture": "OpenAI Agents SDK → Gemini → MCP",

@@ -211,6 +211,51 @@ class WorkflowGraph:
             
             return state
         
+        async def summarize_node_handler(state: State) -> State:
+            """Generate final 1-line summary of the workflow result"""
+            print(f"Summarize Node: Creating concise summary")
+            
+            try:
+                # Get the workflow result from metadata
+                workflow_type = state.workflow_type
+                result_key = f"{workflow_type}_result"
+                
+                if result_key in state.metadata:
+                    result_data = state.metadata[result_key]
+                    
+                    # Extract the full response
+                    full_response = result_data.get("result", "")
+                    
+                    # If we already have a summary from agents_manager, use it
+                    if "summary" in result_data:
+                        summary = result_data["summary"]
+                    else:
+                        # Generate summary using summarizer agent
+                        summary_messages = [
+                            {"role": "user", "content": f"Summarize this in ONE LINE (max 150 chars):\n\n{full_response}"}
+                        ]
+                        summary = await self.agents_manager._run_agent_with_gemini(
+                            self.agents_manager.summarizer_agent, 
+                            summary_messages
+                        )
+                        summary = summary.strip()
+                    
+                    # Add summary to metadata
+                    state.metadata["final_summary"] = summary
+                    state.metadata["summary_generated"] = True
+                    
+                    print(f"Summary: {summary}")
+                else:
+                    state.metadata["final_summary"] = f"{workflow_type} workflow completed"
+                    state.metadata["summary_generated"] = False
+                
+            except Exception as e:
+                print(f"Summarize Node Error: {e}")
+                state.metadata["final_summary"] = f"{state.workflow_type} workflow completed with errors"
+                state.metadata["summary_generated"] = False
+            
+            return state
+        
         # ====================================================================
         # ROUTER FUNCTIONS
         # ====================================================================
@@ -244,6 +289,7 @@ class WorkflowGraph:
         graph_builder.add_node('meeting_node', meeting_node_handler)
         graph_builder.add_node('onboarding_node', onboarding_node_handler)
         graph_builder.add_node('transcribe_node', transcribe_node_handler)
+        graph_builder.add_node('summarize_node', summarize_node_handler)  # Add summarizer node
         
         # Define edges
         graph_builder.add_edge(START, "input_node")
@@ -261,12 +307,17 @@ class WorkflowGraph:
             }
         )
         
-        # Terminal nodes
-        graph_builder.add_edge("standup_node", END)
-        graph_builder.add_edge("qa_node", END)
-        graph_builder.add_edge("onboarding_node", END)
+        # Terminal nodes - all flow through summarizer before END
+        graph_builder.add_edge("standup_node", "summarize_node")
+        graph_builder.add_edge("qa_node", "summarize_node")
+        graph_builder.add_edge("onboarding_node", "summarize_node")
+        graph_builder.add_edge("meeting_node", "summarize_node")
+        
+        # Transcription flows to meeting, then to summarizer
         graph_builder.add_edge("transcribe_node", "meeting_node")
-        graph_builder.add_edge("meeting_node", END)
+        
+        # Summarizer is the final node before END
+        graph_builder.add_edge("summarize_node", END)
         
         # Compile graph with memory checkpointing
         checkpointer = InMemorySaver()
@@ -310,9 +361,9 @@ class WorkflowGraph:
                 "status": "success",
                 "workflow_type": workflow_type,
                 "user_id": user_id,
-                "result": result.metadata,
-                "workflow_completed": result.metadata.get("workflow_completed", False),
-                "conversation_id": result.metadata.get("conversation_id"),
+                "result": result.get("metadata"),
+                "workflow_completed": result.get("metadata").get("workflow_completed", False),
+                "conversation_id": result.get("metadata").get("conversation_id"),
                 "architecture": "LangGraph → AgentsManager → Gemini + MCP"
             }
             

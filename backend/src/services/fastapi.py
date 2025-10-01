@@ -6,7 +6,9 @@ import json
 import os
 import hmac
 import hashlib
+import httpx
 import time
+import asyncio
 import urllib.parse
 from typing import Dict, Any
 from pydantic import BaseModel
@@ -15,7 +17,7 @@ from contextlib import asynccontextmanager
 from config.slack_client import slack_client
 from fastapi.middleware.cors import CORSMiddleware
 from services.workflow_graph import workflow_graph
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request, Form
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request, APIRouter
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from config.pydantic_models import SlackEventRequest, SlackCommandRequest,StandupRequest, MeetingRequest, QARequest, OnboardingRequest, TaskUpdate
 from config.env_config import config as env
@@ -46,7 +48,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+router = APIRouter()
 # ============================================================================
 # AUTH DEPENDENCIES
 # ============================================================================
@@ -58,30 +60,60 @@ def format_slack_response(
     user_id: str,
     text: str,
     workflow_result: dict | None = None
-) -> str:
+) -> dict:
     """
-    Format Slack responses for different commands in a clean, reusable way.
+    Format Slack responses in a structured way (text + optional blocks).
+    Returns a Slack message payload dict (with `text` and `blocks` or `attachments`).
     """
-    # Safely extract metadata
     metadata = (workflow_result or {}).get("metadata", {})
 
+    # Helper to get nested result
+    def get_result(key: str, fallback: str = "") -> str:
+        return metadata.get(key, {}).get("result", fallback).strip()
+
+    # Slack mrkdwn formatting helper
+    def bold(s: str) -> str:
+        return f"*{s}*"
+
+    # Common prefix
+    header = f"{user_name} says: `{text}`"
+
     if command == "/standup":
-        standup_result = metadata.get("standup_result", {})
-        final_text = standup_result.get("result") or "Standup update recorded."
-        return f"📌 Standup update from *{user_name}*: {text}\n✅ {final_text.strip()}"
+        standup_text = get_result("standup_result", "Standup update recorded.")
+        body = f"📌 Standup update from *{user_name}*:\n> {text}\n✅ {standup_text}"
 
     elif command == "/onboard":
-        onboard_result = metadata.get("onboarding_result", {})
-        final_text = onboard_result.get("result") or "Onboarding process started."
-        return f"🚀 Onboarding update for *{user_name}*\n✅ {final_text.strip()}"
+        onboard_text = get_result("onboarding_result", "Onboarding process started.")
+        body = f"🚀 Onboarding update for *{user_name}*:\n✅ {onboard_text}"
 
     elif command == "/ask":
-        qa_result = metadata.get("qa_result", {})
-        final_text = qa_result.get("result") or "Answer processed."
-        return f"💡 Question from *{user_name}*: {text}\n🤖 {final_text.strip()}"
+        qa_text = get_result("qa_result", "Answer processed.")
+        body = f"💡 Question from *{user_name}*:\n> {text}\n🤖 {qa_text}"
+
+    elif command == "/meeting":
+        meeting_text = get_result("meeting_result", "Meeting summary generated.")
+        body = f"📅 Meeting summary for *{user_name}*:\n{meeting_text}"
+
+    elif command == "/transcribe":
+        trans_text = get_result("transcription_result", "No transcription available.")
+        body = f"📝 Transcript result:\n{trans_text}"
 
     else:
-        return f"⚠️ Unknown command: {command} by {user_name} ({user_id})"
+        body = f"⚠️ Unknown command: `{command}` by *{user_name}* ({user_id})"
+
+    # Return Slack message payload
+    return {
+        "text": body,
+        # Optionally include blocks for nicer UI
+        "blocks": [
+            {"type": "section", "text": {"type": "mrkdwn", "text": body}}
+        ]
+    }
+
+async def post_to_slack_response_url(response_url: str, payload: dict):
+    """Post async results back to Slack via response_url"""
+    async with httpx.AsyncClient() as client:
+        await client.post(response_url, json=payload)
 
 class SlackChallenge(BaseModel):
     token: str
@@ -171,41 +203,62 @@ async def slack_events(challenge_data: SlackChallenge):
 
 @app.post("/webhook/slack/commands")
 async def slack_commands(request: Request):
+    # 1. Parse and verify
     body = await get_cached_body(request)
     verify_slack_request(request, body)
-    form_data = urllib.parse.parse_qs(body.decode('utf-8'))
 
+    form_data = urllib.parse.parse_qs(body.decode("utf-8"))
     command = form_data.get("command", [""])[0]
     text = form_data.get("text", [""])[0]
     user_id = form_data.get("user_id", [""])[0]
     user_name = form_data.get("user_name", [""])[0]
+    response_url = form_data.get("response_url", [""])[0]
 
-    # Route workflows
+    print(f"✅ Slack command: {command}, user={user_name}, text={text}")
+
+    # 2. Quick ack to Slack (must return in <3s)
+    ack_message = {
+        "response_type": "ephemeral",
+        "text": f"⏳ Processing {command} for {user_name}..."
+    }
+
+    # 3. Run workflow in background
+    asyncio.create_task(
+        run_workflow_and_post_result(command, text, user_name, user_id, response_url)
+    )
+
+    return ack_message
+
+
+async def run_workflow_and_post_result(command, text, user_name, user_id, response_url):
+    """Run LLM workflow in background and update Slack"""
     workflow_result = None
     if command == "/standup":
         workflow_result = await workflow_graph.execute_workflow(
             "standup", {"command_text": text, "user_id": user_id}, user_id
         )
     elif command == "/onboard":
-        workflow_result = await workflow_graph(
+        workflow_result = await workflow_graph.execute_workflow(
             "onboarding", {"command_text": text, "user_id": user_id}, user_id
         )
     elif command == "/ask":
         workflow_result = await workflow_graph.execute_workflow(
             "qa", {"question": text, "user_id": user_id}, user_id
         )
-    
+    else:
+        workflow_result = {"metadata": {"error": f"Unknown command {command}"}}
+
     print("workflow_result", workflow_result)
 
     # Format Slack response
-    slack_text = format_slack_response(command, user_name, user_id, text, workflow_result)
+    slack_payload = format_slack_response(
+        command, user_name, user_id, text, workflow_result
+    )
 
-    print("Final Slack Response => ", slack_text)
+    print("Final Slack Response => ", slack_payload)
 
-    return {
-        "response_type": "in_channel",
-        "text": slack_text
-    }
+    # Send back to Slack using response_url
+    await post_to_slack_response_url(response_url, slack_payload)
 
 @app.post("/webhook/discord/events")
 async def discord_events(event_data: Dict[str, Any]):
