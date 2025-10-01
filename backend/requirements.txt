@@ -7,3 +7,5 @@ slack-sdk>=3.36.0
 uvicorn>=0.35.0
 python-multipart>=0.0.20
 google-generativeai>=0.8.5
+mcp>=1.15.0
+openai-agents>=0.3.2

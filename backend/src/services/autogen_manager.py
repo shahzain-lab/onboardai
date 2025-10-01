@@ -9,8 +9,7 @@ from config.env_config import config as env
 from services.openai_agents import MCPToolManager, GeminiClient
 
 # OpenAI Agents SDK
-from agents import Agent, Runner
-from agents.handoffs import Handoff
+from agents import Agent, Runner 
 
 
 class AgentsManager:
@@ -62,21 +61,21 @@ class AgentsManager:
         db_fs_tools = self.mcp_manager.get_tools_for_agent(["database", "filesystem"])
         
         # Create handoffs between agents
-        handoff_to_standup = Handoff(
-            agent_name="standup_specialist",
-            description="Transfer to standup specialist for processing daily updates"
+        handoff_to_standup = Agent(
+            name="standup_specialist",
+            handoff_description="Transfer to standup specialist for processing daily updates"
         )
-        handoff_to_meeting = Handoff(
-            agent_name="meeting_specialist",
-            description="Transfer to meeting specialist for processing meeting transcripts"
+        handoff_to_meeting = Agent(
+            name="meeting_specialist",
+            handoff_description="Transfer to meeting specialist for processing meeting transcripts"
         )
-        handoff_to_qa = Handoff(
-            agent_name="qa_specialist",
-            description="Transfer to QA specialist for knowledge base queries"
+        handoff_to_qa = Agent(
+            name="qa_specialist",
+            handoff_description="Transfer to QA specialist for knowledge base queries"
         )
-        handoff_to_onboarding = Handoff(
-            agent_name="onboarding_specialist",
-            description="Transfer to onboarding specialist for new hire workflows"
+        handoff_to_onboarding = Agent(
+            name="onboarding_specialist",
+            handoff_description="Transfer to onboarding specialist for new hire workflows"
         )
         
         # 1. Coordinator Agent - Main orchestrator

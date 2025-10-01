@@ -25,10 +25,7 @@ class Config:
     GOOGLE_SERVICE_ACCOUNT_KEY = os.getenv("GOOGLE_SERVICE_ACCOUNT_KEY")
 
     # Database
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_USER = os.getenv("DB_USER", "postgres")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
-    DB_NAME = os.getenv("DB_NAME", "onboardai")
+    DATABASE_URL = os.getenv("DATABASE_URL")
 
     # JWT
     JWT_SECRET = os.getenv("JWT_SECRET", "changeme")
