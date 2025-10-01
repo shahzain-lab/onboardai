@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from services.workflow_graph import workflow_graph
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from config.pydantic_models import SlackEventRequest, SlackCommandRequest,StandupRequest, MeetingRequest, QARequest, OnboardingRequest, TaskUpdate
+from config.pydantic_models import SlackEventRequest, SlackCommandRequest, StandupRequest, MeetingRequest, QARequest, OnboardingRequest, TaskUpdate
 from config.env_config import config as env
 
 SLACK_SIGNING_SECRET = env.SLACK_SIGNING_SECRET
@@ -65,26 +65,25 @@ def format_slack_response(
     Format Slack responses in a structured way (text + optional blocks).
     Returns a Slack message payload dict (with `text` and `blocks` or `attachments`).
     """
+    # Top-level keys (like final_summary)
+    final_summary = (workflow_result or {}).get("final_summary")
+
+    # Metadata results from agents
     metadata = (workflow_result or {}).get("metadata", {})
 
-    # Helper to get nested result
     def get_result(key: str, fallback: str = "") -> str:
         return metadata.get(key, {}).get("result", fallback).strip()
 
-    # Slack mrkdwn formatting helper
-    def bold(s: str) -> str:
-        return f"*{s}*"
-
-    # Common prefix
-    header = f"{user_name} says: `{text}`"
-
     if command == "/standup":
-        standup_text = get_result("standup_result", "Standup update recorded.")
-        body = f"📌 Standup update from *{user_name}*:\n> {text}\n✅ {standup_text}"
+        if final_summary:
+            body = f"📌 *Standup Summary* for {user_name}:\n{final_summary}"
+        else:
+            standup_text = get_result("standup_result", "Standup update recorded.")
+            body = f"📌 Standup update from *{user_name}*:\n> {text}\n✅ {standup_text}"
 
     elif command == "/onboard":
         onboard_text = get_result("onboarding_result", "Onboarding process started.")
-        body = f"🚀 Onboarding update for *{user_name}*:\n✅ {onboard_text}"
+        body = f"🚀 Onboarding update for *{user_name}*\n✅ {onboard_text}"
 
     elif command == "/ask":
         qa_text = get_result("qa_result", "Answer processed.")
@@ -101,14 +100,13 @@ def format_slack_response(
     else:
         body = f"⚠️ Unknown command: `{command}` by *{user_name}* ({user_id})"
 
-    # Return Slack message payload
     return {
         "text": body,
-        # Optionally include blocks for nicer UI
         "blocks": [
             {"type": "section", "text": {"type": "mrkdwn", "text": body}}
         ]
     }
+
 
 async def post_to_slack_response_url(response_url: str, payload: dict):
     """Post async results back to Slack via response_url"""

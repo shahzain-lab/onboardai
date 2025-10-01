@@ -208,6 +208,7 @@ class AgentsManager:
                 1. Generate ONLY ONE LINE summary (maximum 150 characters)
                 2. Be extremely concise and to the point
                 3. Focus on the key outcome or result
+                4. Hide technicall details or backend flows
                 4. Remove all reasoning, explanations, and process details
                 5. Use present tense, active voice
                 6. NO bullet points, NO multiple sentences, NO elaboration""",
