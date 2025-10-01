@@ -22,15 +22,11 @@ class MCPToolManager:
         self.sessions: Dict[str, ClientSession] = {}
         self.available_tools: Dict[str, Any] = {}
         self.tool_functions: Dict[str, Callable] = {}
+        self.connection_errors: Dict[str, str] = {}
     
     async def initialize_mcp_servers(self):
-        """Initialize all MCP servers"""
+        """Initialize MCP servers (without Slack)"""
         mcp_servers = {
-            "slack": StdioServerParameters(
-                command="npx",
-                args=["-y", "@modelcontextprotocol/server-slack"],
-                env={"SLACK_BOT_TOKEN": env.SLACK_BOT_TOKEN}
-            ),
             "google": StdioServerParameters(
                 command="npx",
                 args=["-y", "@modelcontextprotocol/server-google-calendar"],
@@ -70,9 +66,11 @@ class MCPToolManager:
                                 name, tool.name, tool.description
                             )
                         
-                        print(f"Connected to MCP server: {name} ({len(tools_response.tools)} tools)")
+                        print(f"✓ Connected to MCP server: {name} ({len(tools_response.tools)} tools)")
             except Exception as e:
-                print(f"Failed to connect to MCP server {name}: {e}")
+                error_msg = f"Failed to connect to MCP server {name}: {str(e)}"
+                print(f"✗ {error_msg}")
+                self.connection_errors[name] = str(e)
     
     def _create_tool_function(self, server_name: str, tool_name: str, description: str) -> Callable:
         """Create a Python function that executes an MCP tool"""
@@ -80,13 +78,16 @@ class MCPToolManager:
             """Dynamically generated MCP tool function"""
             try:
                 if server_name not in self.sessions:
-                    return json.dumps({"error": f"MCP server '{server_name}' not connected"})
+                    return json.dumps({
+                        "error": f"MCP server '{server_name}' not connected",
+                        "details": self.connection_errors.get(server_name, "Unknown error")
+                    })
                 
                 session = self.sessions[server_name]
                 result = await session.call_tool(tool_name, kwargs)
-                return json.dumps(result)
+                return json.dumps({"success": True, "data": result})
             except Exception as e:
-                return json.dumps({"error": str(e)})
+                return json.dumps({"error": str(e), "tool": tool_name})
         
         tool_function.__name__ = f"{server_name}_{tool_name}".replace("-", "_")
         tool_function.__doc__ = description or f"Execute {tool_name} on {server_name}"
@@ -106,6 +107,14 @@ class MCPToolManager:
             tools.append(tool_func)
         
         return tools
+    
+    def get_connection_status(self) -> Dict[str, Any]:
+        """Get status of all MCP connections"""
+        return {
+            "connected": list(self.sessions.keys()),
+            "failed": self.connection_errors,
+            "total_tools": len(self.available_tools)
+        }
 
 
 class GeminiClient:

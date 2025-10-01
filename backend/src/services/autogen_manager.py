@@ -58,9 +58,9 @@ class AgentsManager:
         # Get tools from MCP for each agent
         all_tools = self.mcp_manager.get_tools_for_agent()
         slack_db_tools = self.mcp_manager.get_tools_for_agent(["slack", "database"])
-        google_slack_db_tools = self.mcp_manager.get_tools_for_agent(["google", "slack", "database"])
-        db_fs_tools = self.mcp_manager.get_tools_for_agent(["database", "filesystem"])
-        
+        google_slack_db_tools = self.mcp_manager.get_tools_for_agent(["google", "database"])
+        print("All MCP Tools => => ", all_tools)
+
         # Create handoffs between agents
         handoff_to_standup = Agent(
             name="standup_specialist",
@@ -72,7 +72,7 @@ class AgentsManager:
         )
         handoff_to_qa = Agent(
             name="qa_specialist",
-            handoff_description="Transfer to QA specialist for knowledge base queries"
+            handoff_description="Transfer to QA specialist for knowledge base queries",
         )
         handoff_to_onboarding = Agent(
             name="onboarding_specialist",
@@ -161,6 +161,7 @@ class AgentsManager:
             
             You have access to:
             - Database: Search knowledge base and retrieve documents
+            - Database: Read tasks and track progress
             - Filesystem: Read documentation files and resources
             
             Your workflow:
@@ -172,7 +173,7 @@ class AgentsManager:
             
             Be accurate, helpful, and always cite your sources.
             If you don't know something, say so clearly and suggest alternatives.""",
-            mcp_servers=db_fs_tools,
+            mcp_servers=all_tools,
         )
         
         # 5. Onboarding Agent - New hire specialist
@@ -182,8 +183,7 @@ class AgentsManager:
             instructions="""You are an onboarding specialist for new hires.
             
             You have access to:
-            - Slack: Send welcome messages and communications
-            - Database: Store onboarding tasks and track progress
+            - Database: Read onboarding tasks and track progress
             - Filesystem: Access onboarding documents and materials
             
             Your workflow:
@@ -202,16 +202,18 @@ class AgentsManager:
         self.summarizer_agent = Agent(
             name="summarizer_specialist",
             model=self.model,
-            instructions="""You are a summarization specialist. Your ONLY job is to create ultra-concise, single-line summaries.
+            instructions="""You are a summarization specialist. Your ONLY job is to create ultra-concise, 
+                single-line summaries for end users. 
 
                 Rules:
-                1. Generate ONLY ONE LINE summary (maximum 150 characters)
-                2. Be extremely concise and to the point
-                3. Focus on the key outcome or result
-                4. Hide technicall details or backend flows
-                4. Remove all reasoning, explanations, and process details
-                5. Use present tense, active voice
-                6. NO bullet points, NO multiple sentences, NO elaboration""",
+                1. Generate ONLY ONE LINE (maximum 120 characters).
+                2. Be extremely concise and plain, like a quick status update.
+                3. Focus on the user’s task or outcome (what was done, what’s next).
+                4. Do NOT mention system names, agents, MCP, routing, or backend steps.
+                5. Avoid all technical terms (API, workflow, coordinator, etc.).
+                6. Remove reasoning, explanations, and process details.
+                7. No multiple sentences, no bullet points, no filler.
+                8. Always sound like a short update in a daily standup context.""",
             mcp_servers=all_tools,
         )
         
@@ -247,6 +249,8 @@ class AgentsManager:
                 starting_agent = self.coordinator
             else:
                 starting_agent = agent_map.get(workflow_type, self.qa_agent)
+
+            print("starting_agent => => ", starting_agent)
             
             # Create task description
             task_description = f"""Process {workflow_type} workflow.
