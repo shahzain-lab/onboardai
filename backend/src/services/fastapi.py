@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from config.slack_client import slack_client
 from fastapi.middleware.cors import CORSMiddleware
 from services.workflow_graph import workflow_graph
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request, APIRouter
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from config.pydantic_models import SlackEventRequest, SlackCommandRequest,StandupRequest, MeetingRequest, QARequest, OnboardingRequest, TaskUpdate
 from config.env_config import config as env
@@ -48,7 +48,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-router = APIRouter()
+
 # ============================================================================
 # AUTH DEPENDENCIES
 # ============================================================================
