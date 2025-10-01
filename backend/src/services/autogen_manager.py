@@ -58,7 +58,7 @@ class AgentsManager:
         # Get tools from MCP for each agent
         all_tools = self.mcp_manager.get_tools_for_agent()
         slack_db_tools = self.mcp_manager.get_tools_for_agent(["slack", "database"])
-        google_slack_db_tools = self.mcp_manager.get_tools_for_agent(["google", "database"])
+        google_slack_db_tools = self.mcp_manager.get_tools_for_agent([ "database"])
         print("All MCP Tools => => ", all_tools)
 
         # Create handoffs between agents

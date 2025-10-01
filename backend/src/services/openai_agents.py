@@ -27,22 +27,20 @@ class MCPToolManager:
     async def initialize_mcp_servers(self):
         """Initialize MCP servers (without Slack)"""
         mcp_servers = {
-            "google": StdioServerParameters(
-                command="npx",
-                args=["-y", "@modelcontextprotocol/server-google-calendar"],
-                env={
-                    "GOOGLE_CLIENT_ID": env.GOOGLE_CLIENT_ID,
-                    "GOOGLE_CLIENT_SECRET": env.GOOGLE_CLIENT_SECRET,
-                }
-            ),
+            # "google": StdioServerParameters(
+            #     command="npx",
+            #     args=["-y", "@modelcontextprotocol/server-google-calendar"],
+            #     env={
+            #         "GOOGLE_CLIENT_ID": env.GOOGLE_CLIENT_ID,
+            #         "GOOGLE_CLIENT_SECRET": env.GOOGLE_CLIENT_SECRET,
+            #     }
+            # ),
             "database": StdioServerParameters(
-                command="npx",
-                args=["-y", "@modelcontextprotocol/server-postgres"],
+                command="server-postgres", 
                 env={"DATABASE_URL": env.DATABASE_URL}
             ),
             "filesystem": StdioServerParameters(
-                command="npx",
-                args=["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
+                command="server-filesystem"
             ),
         }
         

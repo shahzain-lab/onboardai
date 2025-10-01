@@ -1,11 +1,15 @@
 FROM python:3.12-slim
 
-# Install system deps (curl, build tools, Node.js + npm)
+# Install system dependencies: curl, gnupg, build tools, Node.js + npm
 RUN apt-get update && apt-get install -y curl gnupg build-essential \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && npm install -g npm@latest \
     && rm -rf /var/lib/apt/lists/*
+
+# Preinstall MCP servers globally so no npx needed at runtime
+RUN npm install -g @modelcontextprotocol/server-postgres \
+                  @modelcontextprotocol/server-filesystem 
 
 # Install uv (fast dependency manager)
 RUN pip install --no-cache-dir uv
