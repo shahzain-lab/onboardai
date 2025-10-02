@@ -57,15 +57,24 @@ class MCPToolManager:
                         tools_response = await session.list_tools()
                         for tool in tools_response.tools:
                             tool_key = f"{name}_{tool.name}"
+                            
+                            # Save full tool metadata
                             self.available_tools[tool_key] = {
                                 "server": name,
-                                "tool": tool,
+                                "tool": tool,  
                                 "description": tool.description,
-                            }
+                             }
                             
-                            self.tool_functions[tool_key] = self._create_tool_function(
-                                name, tool.name, tool.description
-                            )
+                            # Create executable wrapper
+                            fn = self._create_tool_function(name, tool.name, tool.description)
+                            
+                            # Store function with metadata
+                            self.tool_functions[tool_key] = {
+                                "function": fn,
+                                "name": tool.name,
+                                "description": tool.description,
+                                "input_schema": tool.inputSchema,
+                            }
                         
                         print(f"✓ Connected to MCP server: {name} ({len(tools_response.tools)} tools)")
             except Exception as e:

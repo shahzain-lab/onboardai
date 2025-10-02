@@ -12,7 +12,7 @@ class AgentsManager:
     
     def __init__(self):
         self.gemini_api_key = env.GEMINI_API_KEY
-        self.model = "gemini-2.0-flash-exp"
+        self.model = "gemini-2.5-pro"
         
         self.gemini_client = GeminiClient(self.gemini_api_key, self.model)
         self.mcp_manager = MCPToolManager()
@@ -67,7 +67,7 @@ Steps:
 3. Return: "X completed, Y planned, Z blockers"
 
 Be direct.""",
-            tools=db_tools,
+            mcp_servers=db_tools,
         )
         
         # QA Specialist
@@ -75,28 +75,42 @@ Be direct.""",
             name="qa_specialist",
             model=self.model,
             instructions="""Answer questions directly using available tools.
-ou can directly call tools from the provided registry.  
-Each tool is available as a Python function `.  
+            Rules:
+            1. You MUST answer every user query by calling one or more of the registered MCP tools.  
+            2. You MUST NOT import external libraries, invent APIs, or use external search.  
+            3. You MUST NOT call functions like `mcptools.*`, `mcp.tools.*`, or any tool not explicitly listed.  
+            4. Your available MCP servers and tools are:
 
-When a user asks something that requires database or knowledge base,  
-you MUST call the appropriate tool and return its results  .
+            Database MCP (Postgres):
+            - get_user
+            - list_users
+            - create_user
+            - list_tasks
+            - get_task
+            - create_task
+            - update_task
+            - raw_read
 
-Your tools:
-- Database MCP: Query tasks, users, data
-- Knowledge Base MCP: Search documents (Pinecone vector DB), store new tasks, store explaination
+            Knowledge Base MCP (Pinecone):
+            - kb_store_task
+            - kb_store_user
+            - kb_store_org
+            - kb_query
+            - kb_answer_qa
 
-For ANY user query:
-1. Understand what they're asking
-2. Use appropriate MCP tool to get data
-3. Provide clear, direct answer
+            For ANY user query:
+            1. Understand what they're asking
+            2. Use appropriate MCP tool to get data
+            3. Provide clear, direct answer
+            4. If you got any error from available tools, return full error 
 
-Examples:
-- "hy" or "hi" → Greet user, ask how you can help
-- "what is next task" → Query database for user's pending tasks
-- "explain X" → Search knowledge base for documentation
+            Examples:
+            - "hy" or "hi" → Greet user, ask how you can help
+            - "what is next task" → Query database for user's pending tasks
+            - "explain X" → Search knowledge base for documentation
 
-Be helpful, direct, and use tools when needed.""",
-            tools=all_tools,
+            Be helpful, direct, and use tools when needed.""",
+            mcp_servers=all_tools,
         )
         
         # Onboarding Specialist
@@ -119,7 +133,7 @@ Steps:
 2. Return: "X tasks created"
 
 Be direct.""",
-            tools=all_tools,
+            mcp_servers=all_tools,
         )
         
         # Summarizer
@@ -136,7 +150,7 @@ Examples:
 - "3 tasks completed..." → "3 completed, 2 pending"
 
 Be concise.""",
-            mcp_servers=[],
+            mcp_servers=all_tools
         )
     
     async def _run_agent(self, agent: Agent, messages: List[Dict]) -> str:
