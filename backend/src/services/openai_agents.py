@@ -2,6 +2,7 @@
 # MCP TOOL MANAGER AND GEMINI CLIENT
 # ============================================================================
 import json
+import os
 import asyncio
 from typing import Dict, Any, Optional, List, Callable
 
@@ -25,25 +26,19 @@ class MCPToolManager:
         self.connection_errors: Dict[str, str] = {}
     
     async def initialize_mcp_servers(self):
-        """Initialize MCP servers (without Slack)"""
-        mcp_servers = {
-            # "google": StdioServerParameters(
-            #     command="npx",
-            #     args=["-y", "@modelcontextprotocol/server-google-calendar"],
-            #     env={
-            #         "GOOGLE_CLIENT_ID": env.GOOGLE_CLIENT_ID,
-            #         "GOOGLE_CLIENT_SECRET": env.GOOGLE_CLIENT_SECRET,
-            #     }
-            # ),
+        """Initialize MCP servers (with Python FastMCP database server)"""
+        db_server_path = os.path.join(
+        os.path.dirname(__file__), "servers", "database_server.py"
+        )
+
+        mcp_servers = { 
             "database": StdioServerParameters(
-                command="server-postgres", 
-                env={"DATABASE_URL": env.DATABASE_URL}
-            ),
-            "filesystem": StdioServerParameters(
-                command="server-filesystem"
-            ),
+                command="python",
+                args=[db_server_path],
+                env={"DATABASE_URL": os.getenv("DATABASE_URL")}
+            )
         }
-        
+            
         for name, params in mcp_servers.items():
             try:
                 async with stdio_client(params) as (read, write):

@@ -1,33 +1,25 @@
 FROM python:3.12-slim
 
-# Install system dependencies: curl, gnupg, build tools, Node.js + npm
+# Install system deps + Node.js + npm
 RUN apt-get update && apt-get install -y curl gnupg build-essential \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && npm install -g npm@latest \
     && rm -rf /var/lib/apt/lists/*
 
-# Preinstall MCP servers globally so no npx needed at runtime
-RUN npm install -g @modelcontextprotocol/server-postgres \
-                  @modelcontextprotocol/server-filesystem 
+# Install the MCP server globally
+RUN npm install -g @henkey/postgres-mcp-server
 
-# Install uv (fast dependency manager)
+# Python dependencies
 RUN pip install --no-cache-dir uv
 
-# Set working dir
 WORKDIR /code
 
-# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
-
-# Install dependencies (no venv, global install)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app code
 COPY src ./src
 
-# Expose HF port
 EXPOSE 7860
 
-# Run FastAPI with uvicorn (note: app is in src/main.py)
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--app-dir", "src"]
