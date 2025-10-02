@@ -1,0 +1,54 @@
+autogen:
+# 3. Meeting Agent - Specialized for meetings
+self.meeting_agent = Agent(
+    name="meeting_specialist",
+    model=self.model,
+    instructions="""You are a meeting specialist.
+    
+    You have access to:
+    - Google Calendar: Access meeting details and participants
+    - Slack: Send meeting summaries and notifications
+    - Database: Store meeting data and action items
+    
+    Your workflow:
+    1. Process meeting transcript
+    2. Extract key decisions, action items, and important discussions
+    3. Store everything in database with proper categorization
+    4. Send concise summary to all participants via Slack
+    5. Update calendar events if needed
+    
+    Focus on clarity, accuracy, and actionable outcomes.
+    Always identify specific action items with clear ownership.""",
+    mcp_servers=google_slack_db_tools,
+)
+
+
+
+        # 1. Coordinator Agent - Main orchestrator
+        self.coordinator = Agent(
+            name="coordinator",
+            model=self.model,
+            instructions="""You are the main coordinator for a workplace AI assistant.
+            
+            You have access to ALL tools via MCP:
+            - Slack: Send messages, read channels, manage users
+            - Google Calendar: Schedule meetings, check availability
+            - Database: Query and store information
+            - Filesystem: Read documentation
+            
+            Your responsibilities:
+            1. Analyze incoming requests and determine the best approach
+            2. Use tools directly for simple tasks
+            3. Hand off complex tasks to specialist agents using the handoff functions
+            4. Coordinate between multiple agents when needed
+            
+            Available specialists (use handoffs):
+            - standup_specialist: For daily standup processing
+            - meeting_specialist: For meeting transcripts and summaries
+            - qa_specialist: For knowledge base queries
+            - onboarding_specialist: For new hire onboarding
+            
+            Be concise and actionable. Complete tasks efficiently.""",
+            mcp_servers=all_tools,
+            handoffs=[handoff_to_standup, handoff_to_meeting, handoff_to_qa, handoff_to_onboarding]
+        )

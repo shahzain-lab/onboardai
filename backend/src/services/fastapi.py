@@ -141,12 +141,7 @@ def format_slack_response(
 
     return {"text": body, "blocks": blocks}
 
-# ---------- workflow runner ----------
-
-# IMPORTANT: import your actual workflow_graph object here
-# from services.workflow import workflow_graph
-# For this example, assume workflow_graph exists in the global scope.
-# If it is in a module, import it at top of file.
+# ---------- workflow runner ---------- 
 
 async def run_workflow_and_post_result(command: str, text: str, user_name: str, user_id: str, response_url: str):
     """
@@ -256,27 +251,8 @@ async def root():
             "health": "/api/health",
             "qa": "/api/qa/query"
         }
-    }
+    } 
 
-@app.post("/webhook/slack/events")
-async def slack_events(event_data: SlackEventRequest, background_tasks: BackgroundTasks):
-    """Handle Slack event subscriptions"""
-    try:
-        event = event_data.event
-        
-        if event.get("type") == "message" and not event.get("bot_id"):
-            # Process user message
-            background_tasks.add_task(
-                process_slack_message,
-                event.get("channel"),
-                event.get("user"),
-                event.get("text", "")
-            )
-        
-        return {"challenge": event_data.dict().get("challenge", "ok")}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
 @app.post("/slack/events")
 async def slack_events(challenge_data: SlackChallenge):
     return {"challenge": challenge_data.challenge}
@@ -305,32 +281,3 @@ async def slack_commands(request: Request, background_tasks: BackgroundTasks):
     background_tasks.add_task(run_workflow_and_post_result, command, text, user_name, user_id, response_url)
 
     return ack
-
-
-# ============================================================================
-# BACKGROUND TASKS
-# ============================================================================
-
-async def process_slack_message(channel: str, user: str, text: str):
-    """Process Slack message in background"""
-    try:
-        # Determine if it's a question or command
-        if "?" in text or text.lower().startswith(("what", "how", "when", "where", "why")):
-            result = await workflow_graph.execute_workflow(
-                "qa",
-                {"question": text, "user_id": user, "channel": channel}
-            )
-        else:
-            result = await workflow_graph.execute_workflow(
-                "general",
-                {"message": text, "user_id": user, "channel": channel}
-            )
-        
-        # Send response back to Slack
-        response_text = json.dumps(result.get("metadata", {}), indent=2)
-        await slack_client.chat_postMessage(
-            channel=channel,
-            text=f"🤖 AI Assistant Response:\n```{response_text}```"
-        )
-    except Exception as e:
-        print(f"Error processing Slack message: {e}")

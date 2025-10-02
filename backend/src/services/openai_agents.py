@@ -28,14 +28,22 @@ class MCPToolManager:
     async def initialize_mcp_servers(self):
         """Initialize MCP servers (with Python FastMCP database server)"""
         db_server_path = os.path.join(
-        os.path.dirname(__file__), "servers", "database_server.py"
+        os.path.dirname(__file__), "..", "servers", "database_server.py"
+        )
+        kb_server_path = os.path.join(
+        os.path.dirname(__file__), "..", "servers", "kb_vector_tools.py"
         )
 
         mcp_servers = { 
             "database": StdioServerParameters(
                 command="python",
                 args=[db_server_path],
-                env={"DATABASE_URL": os.getenv("DATABASE_URL")}
+                env={"DATABASE_URL": env.DATABASE_URL}
+            ),
+            "knowledge_base": StdioServerParameters(
+                command="python",
+                args=[kb_server_path],
+                env={"PINECONE_API_KEY": env.PINECONE_API_KEY}
             )
         }
             
