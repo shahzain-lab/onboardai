@@ -28,7 +28,7 @@ class MCPToolManager:
     async def initialize_mcp_servers(self):
         """Initialize MCP servers (with Python FastMCP database server)"""
         db_server_path = os.path.join(
-        os.path.dirname(__file__), "..", "servers", "database_server.py"
+        os.path.dirname(__file__), "..", "servers", "database_tools.py"
         )
         kb_server_path = os.path.join(
         os.path.dirname(__file__), "..", "servers", "kb_vector_tools.py"

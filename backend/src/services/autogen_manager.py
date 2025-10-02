@@ -8,7 +8,7 @@ from agents import Agent, Runner
 
 
 class AgentsManager:
-    """Simplified agents manager - direct specialist calls only"""
+    """Direct specialist agents with MCP tools"""
     
     def __init__(self):
         self.gemini_api_key = env.GEMINI_API_KEY
@@ -18,7 +18,6 @@ class AgentsManager:
         self.mcp_manager = MCPToolManager()
         self.runner = Runner()
         
-        # Only specialist agents
         self.standup_agent = None
         self.qa_agent = None
         self.onboarding_agent = None
@@ -28,7 +27,6 @@ class AgentsManager:
         self._initialized = False
     
     async def initialize(self):
-        """Initialize MCP servers and agents"""
         if self._initialized:
             return
         
@@ -36,93 +34,112 @@ class AgentsManager:
         await self.mcp_manager.initialize_mcp_servers()
         
         status = self.mcp_manager.get_connection_status()
-        print(f"MCP: {len(status['connected'])} servers, {status['total_tools']} tools")
+        print(f"MCP Ready: {len(status['connected'])} servers, {status['total_tools']} tools")
         
-        if status['failed']:
-            print(f"Warning: {status['failed']}")
-        
-        print("Creating specialist agents...")
         await self._setup_agents()
-        
         self._initialized = True
-        print("System ready!")
+        print("Agents ready!")
     
     async def _setup_agents(self):
-        """Setup only specialist agents - no coordinator, no meeting agent"""
+        """Setup specialists with MCP tools"""
         
-        db_tools = self.mcp_manager.get_tools_for_agent(["database"])
+        db_tools = self.mcp_manager.get_tools_for_agent(["database", "knowledge_base"])
         all_tools = self.mcp_manager.get_tools_for_agent()
+        print("all_tools", all_tools)
         
-        # 1. Standup Specialist
+        # Standup Specialist
         self.standup_agent = Agent(
             name="standup_specialist",
             model=self.model,
-            instructions="""Process standup data directly.
+            instructions="""Process standup requests directly.
+You can directly call tools from the provided registry.  
+Each tool is available as a Python function `.  
 
-            Steps:
-            1. Parse yesterday_tasks, today_tasks, blockers from input
-            2. Store in database using MCP tools
-            3. Return brief summary
+When a user asks something that requires database or knowledge base,  
+you MUST call the appropriate tool and return its results  
+ 
+Your tools:
+- Database MCP: Store standup data
 
-            Output format: "X completed, Y planned, Z blockers"
-            Be direct and concise.""",
-            mcp_servers=db_tools,
+Steps:
+1. Extract yesterday_tasks, today_tasks, blockers
+2. Store in database
+3. Return: "X completed, Y planned, Z blockers"
+
+Be direct.""",
+            tools=db_tools,
         )
         
-        # 2. QA Specialist
+        # QA Specialist
         self.qa_agent = Agent(
             name="qa_specialist",
             model=self.model,
-            instructions="""Answer questions and handle task queries directly.
+            instructions="""Answer questions directly using available tools.
+ou can directly call tools from the provided registry.  
+Each tool is available as a Python function `.  
 
-            Steps:
-            1. Understand the question
-            2. Query database for tasks using user_id
-            3. Return clear answer
+When a user asks something that requires database or knowledge base,  
+you MUST call the appropriate tool and return its results  .
 
-            For "what is next task":
-            - Query tasks table WHERE user_id = <user_id> AND status IN ('pending', 'in_progress')
-            - Return the highest priority task
+Your tools:
+- Database MCP: Query tasks, users, data
+- Knowledge Base MCP: Search documents (Pinecone vector DB), store new tasks, store explaination
 
-            Output format: "Next task: [task name]"
-            Be direct, helpful, concise.""",
-            mcp_servers=all_tools,
+For ANY user query:
+1. Understand what they're asking
+2. Use appropriate MCP tool to get data
+3. Provide clear, direct answer
+
+Examples:
+- "hy" or "hi" → Greet user, ask how you can help
+- "what is next task" → Query database for user's pending tasks
+- "explain X" → Search knowledge base for documentation
+
+Be helpful, direct, and use tools when needed.""",
+            tools=all_tools,
         )
         
-        # 3. Onboarding Specialist
+        # Onboarding Specialist
         self.onboarding_agent = Agent(
             name="onboarding_specialist",
             model=self.model,
-            instructions="""Handle onboarding workflows directly.
+            instructions="""Handle onboarding directly.
+ou can directly call tools from the provided registry.  
+Each tool is available as a Python function `.  
 
-            Steps:
-            1. Create onboarding tasks in database
-            2. Store onboarding plan
-            3. Return summary
+When a user asks something that requires database or knowledge base,  
+you MUST call the appropriate tool and return its results.
 
-            Output format: "X tasks created for onboarding"
-            Be direct and concise.""",
-            mcp_servers=all_tools,
+Your tools:
+- Database MCP: Create onboarding tasks
+- Knowledge Base MCP: Get onboarding docs
+
+Steps:
+1. Create tasks in database
+2. Return: "X tasks created"
+
+Be direct.""",
+            tools=all_tools,
         )
         
-        # 4. Summarizer
+        # Summarizer
         self.summarizer_agent = Agent(
             name="summarizer",
             model=self.model,
-            instructions="""Create ONE LINE summary (max 120 chars).
+            instructions="""ONE LINE summary (max 120 chars).
 
-            Rules:
-            - Extract final result only
-            - Remove all process details
-            - No technical jargon
-            - Plain language
-            - Present tense
+Extract final result only. No process details.
 
-            Example: "3 tasks completed, 2 blockers identified" """,
+Examples:
+- "Hello! How can I help you today?" → "Greeted user"
+- "Your next task is..." → "Next task: [task name]"
+- "3 tasks completed..." → "3 completed, 2 pending"
+
+Be concise.""",
             mcp_servers=[],
         )
     
-    async def _run_agent_with_gemini(self, agent: Agent, messages: List[Dict]) -> str:
+    async def _run_agent(self, agent: Agent, messages: List[Dict]) -> str:
         """Run agent with Gemini"""
         try:
             return await self.gemini_client.generate_response(messages, agent.mcp_servers)
@@ -130,55 +147,54 @@ class AgentsManager:
             return f"Error: {str(e)}"
     
     async def process_workflow(self, workflow_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process workflow - direct specialist call (no coordinator)
-        """
+        """Process workflow with direct specialist"""
         if not self._initialized:
             await self.initialize()
         
         try:
-            # Direct specialist selection
-            specialist_map = {
+            # Select specialist
+            specialists = {
                 "standup": self.standup_agent,
                 "qa": self.qa_agent,
                 "onboarding": self.onboarding_agent,
-                "meeting": self.qa_agent,  # Meeting queries go to QA
-                "transcription": self.qa_agent,  # Transcription queries go to QA
+                "meeting": self.qa_agent,
+                "transcription": self.qa_agent,
             }
             
-            specialist = specialist_map.get(workflow_type, self.qa_agent)
+            specialist = specialists.get(workflow_type, self.qa_agent)
             
-            print(f"→ Calling {specialist.name} directly")
+            print(f"→ {specialist.name} handling request")
             
             # Build message
-            task_msg = f"""Handle this {workflow_type} request:
+            user_query = data.get("command_text", "") or json.dumps(data, indent=2)
+            
+            task_msg = f"""User query: {user_query}
 
-{json.dumps(data, indent=2)}
+User ID: {data.get('user_id', 'unknown')}
 
-Process using your MCP tools and return the result."""
+Process this request using your MCP tools and provide a direct answer."""
             
             conversation_id = f"{workflow_type}_{datetime.now().timestamp()}"
             messages = [{"role": "user", "content": task_msg}]
             
             # Call specialist
-            response = await self._run_agent_with_gemini(specialist, messages)
+            response = await self._run_agent(specialist, messages)
+
+            print("Response from Specialist => ", response)
             
             # Summarize
-            summary_msg = [{"role": "user", "content": f"Summarize in ONE LINE (max 120 chars):\n\n{response}"}]
-            summary = await self._run_agent_with_gemini(self.summarizer_agent, summary_msg)
+            summary_msg = [{"role": "user", "content": f"ONE LINE summary (max 120 chars):\n{response}"}]
+            summary = await self._run_agent(self.summarizer_agent, summary_msg)
             
-            # Store conversation
+            # Store
             self.conversation_histories[conversation_id] = {
                 "messages": messages + [{"role": "assistant", "content": response}],
                 "agent": specialist.name,
                 "workflow_type": workflow_type
             }
             
-            # Check for MCP errors
-            has_error = "error" in response.lower() or "failed" in response.lower()
-            
             return {
-                "status": "success" if not has_error else "partial_success",
+                "status": "success",
                 "workflow_type": workflow_type,
                 "result": response,
                 "summary": summary.strip(),
@@ -196,52 +212,12 @@ Process using your MCP tools and return the result."""
                 "mcp_status": self.mcp_manager.get_connection_status(),
                 "timestamp": datetime.now().isoformat()
             }
-    
-    async def process_simple_query(self, query: str, context: Dict[str, Any] = None) -> str:
-        """Process simple query with QA agent"""
-        if not self._initialized:
-            await self.initialize()
-        
-        try:
-            context_str = f"\nContext: {json.dumps(context)}" if context else ""
-            messages = [{"role": "user", "content": f"{query}{context_str}"}]
-            return await self._run_agent_with_gemini(self.qa_agent, messages)
-        except Exception as e:
-            return f"Error: {str(e)}"
-    
-    async def continue_conversation(self, conversation_id: str, message: str) -> str:
-        """Continue conversation"""
-        if not self._initialized:
-            await self.initialize()
-        
-        try:
-            if conversation_id not in self.conversation_histories:
-                return "Conversation not found"
-            
-            history = self.conversation_histories[conversation_id]
-            agent_name = history["agent"]
-            
-            agent_map = {
-                "standup_specialist": self.standup_agent,
-                "qa_specialist": self.qa_agent,
-                "onboarding_specialist": self.onboarding_agent,
-            }
-            agent = agent_map.get(agent_name, self.qa_agent)
-            
-            history["messages"].append({"role": "user", "content": message})
-            response = await self._run_agent_with_gemini(agent, history["messages"])
-            history["messages"].append({"role": "assistant", "content": response})
-            
-            return response
-        except Exception as e:
-            return f"Error: {str(e)}"
 
 
 # Singleton
 _agents_manager_instance = None
 
 async def get_agents_manager() -> AgentsManager:
-    """Get or create agents manager singleton"""
     global _agents_manager_instance
     if _agents_manager_instance is None:
         _agents_manager_instance = AgentsManager()

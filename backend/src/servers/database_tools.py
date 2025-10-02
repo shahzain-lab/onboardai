@@ -37,9 +37,18 @@ mcp = FastMCP(name="TasksDB", lifespan=lifespan)
 def get_pool_from_ctx(ctx: Context) -> asyncpg.pool.Pool:
     return ctx.request_context.lifespan_context.db_pool
 
-# Tools — pass ctx: Context to each tool that needs DB
+# ------------------- Tools -------------------
+
 @mcp.tool()
 async def get_user(user_id: str, ctx: Context) -> Optional[Dict[str, Any]]:
+    """
+    Fetch details of a single user.
+
+    Args:
+        user_id: The unique identifier for the user (Slack/Discord ID).
+    Returns:
+        A dictionary with user info (id, email, name, role, timestamps) or None if not found.
+    """
     pool = get_pool_from_ctx(ctx)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -50,6 +59,14 @@ async def get_user(user_id: str, ctx: Context) -> Optional[Dict[str, Any]]:
 
 @mcp.tool()
 async def list_users(limit: int = 50, ctx: Context = None) -> List[Dict[str, Any]]:
+    """
+    List users in the system.
+
+    Args:
+        limit: Max number of users to return (default 50).
+    Returns:
+        A list of user records (dict).
+    """
     pool = get_pool_from_ctx(ctx)
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -59,9 +76,24 @@ async def list_users(limit: int = 50, ctx: Context = None) -> List[Dict[str, Any
         return [dict(r) for r in rows]
 
 @mcp.tool()
-async def create_user(user_id: str, email: Optional[str] = None,
-                      name: Optional[str] = None, role: Optional[str] = None,
-                      ctx: Context = None) -> Dict[str, Any]:
+async def create_user(
+    user_id: str,
+    email: Optional[str] = None,
+    name: Optional[str] = None,
+    role: Optional[str] = None,
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    Create or update a user.
+
+    Args:
+        user_id: Unique user identifier (Slack/Discord ID).
+        email: Email of the user (optional).
+        name: Name of the user (optional).
+        role: Role of the user (optional).
+    Returns:
+        The created or updated user record.
+    """
     pool = get_pool_from_ctx(ctx)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -80,8 +112,22 @@ async def create_user(user_id: str, email: Optional[str] = None,
         return dict(row)
 
 @mcp.tool()
-async def list_tasks(user_id: Optional[str] = None, status: Optional[str] = None,
-                     limit: int = 100, ctx: Context = None) -> List[Dict[str, Any]]:
+async def list_tasks(
+    user_id: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    ctx: Context = None
+) -> List[Dict[str, Any]]:
+    """
+    List tasks with optional filtering.
+
+    Args:
+        user_id: Filter tasks by user_id (optional).
+        status: Filter tasks by status (optional).
+        limit: Max number of tasks to return (default 100).
+    Returns:
+        A list of task records (dict).
+    """
     pool = get_pool_from_ctx(ctx)
     async with pool.acquire() as conn:
         if user_id and status:
@@ -105,16 +151,46 @@ async def list_tasks(user_id: Optional[str] = None, status: Optional[str] = None
 
 @mcp.tool()
 async def get_task(task_id: int, ctx: Context) -> Optional[Dict[str, Any]]:
+    """
+    Fetch details of a specific task.
+
+    Args:
+        task_id: The numeric ID of the task.
+    Returns:
+        A dictionary with task fields or None if not found.
+    """
     pool = get_pool_from_ctx(ctx)
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
         return dict(row) if row else None
 
 @mcp.tool()
-async def create_task(user_id: str, title: str, description: Optional[str] = None,
-                      status: str = "pending", priority: str = "medium",
-                      source: Optional[str] = None, source_id: Optional[str] = None,
-                      due_date: Optional[str] = None, ctx: Context = None) -> Dict[str, Any]:
+async def create_task(
+    user_id: str,
+    title: str,
+    description: Optional[str] = None,
+    status: str = "pending",
+    priority: str = "medium",
+    source: Optional[str] = None,
+    source_id: Optional[str] = None,
+    due_date: Optional[str] = None,
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    Create a new task for a user.
+
+    Args:
+        user_id: The user_id to assign the task to.
+        title: The title of the task.
+        description: Task description (optional).
+        status: Initial status of the task (default "pending").
+        priority: Task priority (default "medium").
+        source: Source of task creation (e.g. "meeting").
+        source_id: Reference ID (e.g. meeting ID).
+        due_date: Task due date as ISO string (optional).
+    Returns:
+        The created task record.
+    """
     pool = get_pool_from_ctx(ctx)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -128,10 +204,30 @@ async def create_task(user_id: str, title: str, description: Optional[str] = Non
         return dict(row)
 
 @mcp.tool()
-async def update_task(task_id: int, title: Optional[str] = None, description: Optional[str] = None,
-                      status: Optional[str] = None, priority: Optional[str] = None,
-                      due_date: Optional[str] = None, completed_at: Optional[str] = None,
-                      ctx: Context = None) -> Optional[Dict[str, Any]]:
+async def update_task(
+    task_id: int,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    due_date: Optional[str] = None,
+    completed_at: Optional[str] = None,
+    ctx: Context = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Update fields of a task by ID.
+
+    Args:
+        task_id: ID of the task to update.
+        title: New title (optional).
+        description: New description (optional).
+        status: New status (optional).
+        priority: New priority (optional).
+        due_date: New due date (optional).
+        completed_at: Mark as completed at this datetime (optional).
+    Returns:
+        The updated task record or None if not found.
+    """
     pool = get_pool_from_ctx(ctx)
     updates = []
     args = []
@@ -151,11 +247,21 @@ async def update_task(task_id: int, title: Optional[str] = None, description: Op
 
     async with pool.acquire() as conn:
         await conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ${idx}", *args)
-        # reuse get_task
         return await get_task(task_id, ctx=ctx)
 
 @mcp.tool()
 async def raw_read(sql: str, limit: int = 100, ctx: Context = None) -> List[Dict[str, Any]]:
+    """
+    Run a raw SQL read-only query.
+
+    Args:
+        sql: A SELECT SQL query (must begin with SELECT).
+        limit: Max number of rows to return (default 100).
+    Returns:
+        A list of rows (dict).
+    Raises:
+        ValueError if the query does not start with SELECT.
+    """
     cleaned = sql.strip().lower()
     if not cleaned.startswith("select"):
         raise ValueError("raw_read only supports SELECT queries")
