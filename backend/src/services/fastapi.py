@@ -89,42 +89,37 @@ def format_slack_response(
     workflow_result: dict | None = None
 ) -> dict:
     workflow_result = workflow_result or {}
-    metadata = workflow_result.get("result", {}) or {}
 
-    # 1️⃣ Prefer explicit final_summary
+    # Prefer explicit "final_summary" if present
     final_summary = workflow_result.get("final_summary")
 
-    # 2️⃣ Fallback: nested summaries
-    standup_summary = None
-    if isinstance(metadata.get("standup_result"), dict):
-        standup_summary = metadata["standup_result"].get("summary")
+    # Otherwise, fallback to direct "summary"
+    summary_text = final_summary or workflow_result.get("summary")
 
-    # 3️⃣ Fallback: plain result
-    def get_result(key: str, fallback: str = "") -> str:
-        if isinstance(metadata.get(key), dict):
-            return metadata[key].get("result", fallback).strip()
-        return fallback
-
-    # Pick the best available summary
-    summary_text = final_summary or standup_summary or get_result("standup_result", "No summary available.")
+    # If still nothing, fallback to "full_result"
+    if not summary_text:
+        summary_text = workflow_result.get("full_result", "No summary available.")
 
     # --- Format based on command ---
     if command == "/standup":
         body = f"📌 *Standup Summary* for *{user_name}*\n{summary_text}"
     elif command == "/onboard":
-        body = f"🚀 Onboarding update for *{user_name}*\n{final_summary or get_result('onboarding_result', 'Onboarding started.')}"
+        body = f"🚀 Onboarding update for *{user_name}*\n{summary_text}"
     elif command == "/ask":
-        body = f"💡 Question from *{user_name}*:\n> {text}\n\n{final_summary or get_result('qa_result', 'Answer will be available soon.')}"
+        body = (
+            f"💡 Question from *{user_name}*:\n> {text}\n\n"
+            f"{summary_text}"
+        )
     elif command == "/meeting":
-        body = f"📅 Meeting Summary:\n{final_summary or get_result('meeting_result', 'Meeting summary not found.')}"
+        body = f"📅 Meeting Summary:\n{summary_text}"
     elif command == "/transcribe":
-        body = f"📝 Transcript:\n{final_summary or get_result('transcription_result', 'Transcript unavailable.')}"
+        body = f"📝 Transcript:\n{summary_text}"
     else:
         body = f"⚠️ Unknown command: `{command}` by *{user_name}* ({user_id})"
 
     # --- Footer (context info) ---
-    conv_id = workflow_result.get("conversation_id") or metadata.get("conversation_id")
-    agent_used = metadata.get("agent_used") or workflow_result.get("agent_used")
+    conv_id = workflow_result.get("conversation_id")
+    agent_used = workflow_result.get("agent_used")
 
     blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": body}}]
 
@@ -165,7 +160,7 @@ async def run_workflow_and_post_result(command: str, text: str, user_name: str, 
             log.exception("Workflow execution failed: %s", e)
             workflow_result = {"metadata": {"error": str(e)}}
 
-        log.info("Workflow result: %s", workflow_result)
+        print("Workflow result: ", workflow_result)
 
         # Build slack payload using the formatter
         slack_payload = format_slack_response(command, user_name, user_id, text, workflow_result)

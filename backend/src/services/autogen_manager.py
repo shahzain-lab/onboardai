@@ -1,10 +1,12 @@
 import json
+import os
 from datetime import datetime
 from typing import Dict, Any, List
 
 from config.env_config import config as env
-from services.openai_agents import MCPToolManager, GeminiClient
+from services.openai_agents import GeminiClient
 from agents import Agent, Runner
+from agents.mcp import MCPServerStdio
 
 
 class AgentsManager:
@@ -15,13 +17,14 @@ class AgentsManager:
         self.model = "gemini-2.5-pro"
         
         self.gemini_client = GeminiClient(self.gemini_api_key, self.model)
-        self.mcp_manager = MCPToolManager()
+        # self.mcp_manager = MCPToolManager()
         self.runner = Runner()
         
         self.standup_agent = None
         self.qa_agent = None
         self.onboarding_agent = None
         self.summarizer_agent = None
+        self.mcp_servers = None
         
         self.conversation_histories = {}
         self._initialized = False
@@ -31,10 +34,37 @@ class AgentsManager:
             return
         
         print("Initializing MCP servers...")
-        await self.mcp_manager.initialize_mcp_servers()
+        db_server_path = os.path.join(
+            os.path.dirname(__file__), "..", "servers", "database_tools.py"
+        )
+        kb_server_path = os.path.join(
+            os.path.dirname(__file__), "..", "servers", "kb_vector_tools.py"
+        )
+        self.mcp_servers = [
+            MCPServerStdio(
+                params={
+                    "command": "python",
+                    "args": [db_server_path],
+                    "env": {
+                        "DATABASE_URL": env.DATABASE_URL
+                    }
+                }
+            ),
+            MCPServerStdio(
+                params={
+                    "command": "python",
+                    "args": [kb_server_path],
+                    "env": {
+                        "PINECONE_API_KEY": env.PINECONE_API_KEY
+                    }
+                }
+            )
+        ]
+        print(f"✓ Configured {self.mcp_servers} MCP servers")
+        # await self.mcp_manager.initialize_mcp_servers()
         
-        status = self.mcp_manager.get_connection_status()
-        print(f"MCP Ready: {len(status['connected'])} servers, {status['total_tools']} tools")
+        # status = self.mcp_manager.get_connection_status()
+        # print(f"MCP Ready: {len(status['connected'])} servers, {status['total_tools']} tools")
         
         await self._setup_agents()
         self._initialized = True
@@ -43,9 +73,9 @@ class AgentsManager:
     async def _setup_agents(self):
         """Setup specialists with MCP tools"""
         
-        db_tools = self.mcp_manager.get_tools_for_agent(["database", "knowledge_base"])
-        all_tools = self.mcp_manager.get_tools_for_agent()
-        print("all_tools", all_tools)
+        # db_tools = self.mcp_manager.get_tools_for_agent(["database", "knowledge_base"])
+        # all_tools = self.mcp_manager.get_tools_for_agent()
+        # print("all_tools", all_tools)
         
         # Standup Specialist
         self.standup_agent = Agent(
@@ -67,7 +97,7 @@ Steps:
 3. Return: "X completed, Y planned, Z blockers"
 
 Be direct.""",
-            mcp_servers=db_tools,
+            mcp_servers=self.mcp_servers,
         )
         
         # QA Specialist
@@ -76,41 +106,60 @@ Be direct.""",
             model=self.model,
             instructions="""Answer questions directly using available tools.
             Rules:
-            1. You MUST answer every user query by calling one or more of the registered MCP tools.  
-            2. You MUST NOT import external libraries, invent APIs, or use external search.  
-            3. You MUST NOT call functions like `mcptools.*`, `mcp.tools.*`, or any tool not explicitly listed.  
-            4. Your available MCP servers and tools are:
+           **Database Tools (PostgreSQL):**
+- `database_list_tasks`: List tasks with optional filters (user_id, status, limit)
+  Example: list_tasks(status="pending", limit=10)
+  
+- `database_get_task`: Get specific task by ID
+  Example: get_task(task_id=123)
+  
+- `database_create_task`: Create a new task
+  Example: create_task(user_id="user123", title="New Task", description="Details", status="pending", priority="high", due_date="2024-10-15")
+  
+- `database_update_task`: Update task fields
+  Example: update_task(task_id=123, status="completed", completed_at="2024-10-03")
+  
+- `database_get_user`: Get user details by ID
+  Example: get_user(user_id="user123")
+  
+- `database_list_users`: List recent users
+  Example: list_users(limit=20)
+  
+- `database_create_user`: Create or update a user
+  Example: create_user(user_id="user123", email="user@example.com", name="John Doe", role="admin")
+  
+- `database_raw_read`: Execute raw SQL SELECT queries (use carefully)
+  Example: raw_read(sql="SELECT * FROM tasks WHERE status = 'pending'", limit=50)
 
-            Database MCP (Postgres):
-            - get_user
-            - list_users
-            - create_user
-            - list_tasks
-            - get_task
-            - create_task
-            - update_task
-            - raw_read
+**Knowledge Base Tools (Pinecone Vector DB):**
+- `knowledge_base_kb_query`: Search knowledge base with text
+  Example: kb_query(query_text="What is machine learning?", top_k=5, namespace="docs")
+  
+- `knowledge_base_kb_answer_qa`: Answer questions using KB context
+  Example: kb_answer_qa(question="How does AI work?", top_k=3, context_key="text")
+  
+- `knowledge_base_kb_upsert_text`: Insert text documents with auto-embedding
+  Example: kb_upsert_text(documents=[{"id": "doc1", "text": "Content...", "metadata": {"category": "tech"}}], namespace="docs")
+  
+- `knowledge_base_kb_stats`: Get index statistics
+  Example: kb_stats(namespace="docs")
+  
+- `knowledge_base_kb_delete`: Delete vectors from index
+  Example: kb_delete(ids=["doc1", "doc2"], namespace="docs")
 
-            Knowledge Base MCP (Pinecone):
-            - kb_store_task
-            - kb_store_user
-            - kb_store_org
-            - kb_query
-            - kb_answer_qa
+**Instructions:**
+1. **ALWAYS use the tools** to get real data - never make up information
+2. For task queries, use `database_list_tasks` with appropriate filters
+3. For user queries, use `database_get_user` or `database_list_users`
+4. For knowledge base queries, use `knowledge_base_kb_query` or `knowledge_base_kb_answer_qa`
+5. Parse tool results carefully and present them clearly
+6. If a tool returns an error, explain it to the user and suggest alternatives
+7. When creating or updating records, confirm the action was successful
 
-            For ANY user query:
-            1. Understand what they're asking
-            2. Use appropriate MCP tool to get data
-            3. Provide clear, direct answer
-            4. If you got any error from available tools, return full error 
-
-            Examples:
-            - "hy" or "hi" → Greet user, ask how you can help
-            - "what is next task" → Query database for user's pending tasks
-            - "explain X" → Search knowledge base for documentation
+**Important:** Tool names are prefixed with the server name (e.g., `database_list_tasks`, `knowledge_base_kb_query`)
 
             Be helpful, direct, and use tools when needed.""",
-            mcp_servers=all_tools,
+            mcp_servers=self.mcp_servers,
         )
         
         # Onboarding Specialist
@@ -133,7 +182,7 @@ Steps:
 2. Return: "X tasks created"
 
 Be direct.""",
-            mcp_servers=all_tools,
+            mcp_servers=self.mcp_servers,
         )
         
         # Summarizer
@@ -150,7 +199,7 @@ Examples:
 - "3 tasks completed..." → "3 completed, 2 pending"
 
 Be concise.""",
-            mcp_servers=all_tools
+            mcp_servers=self.mcp_servers
         )
     
     async def _run_agent(self, agent: Agent, messages: List[Dict]) -> str:
@@ -214,7 +263,7 @@ Process this request using your MCP tools and provide a direct answer."""
                 "summary": summary.strip(),
                 "agent_used": specialist.name,
                 "conversation_id": conversation_id,
-                "mcp_status": self.mcp_manager.get_connection_status(),
+                # "mcp_status": self.mcp_manager.get_connection_status(),
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -223,7 +272,7 @@ Process this request using your MCP tools and provide a direct answer."""
                 "status": "error",
                 "workflow_type": workflow_type,
                 "error": str(e),
-                "mcp_status": self.mcp_manager.get_connection_status(),
+                # "mcp_status": self.mcp_manager.get_connection_status(),
                 "timestamp": datetime.now().isoformat()
             }
 
