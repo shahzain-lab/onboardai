@@ -10,6 +10,7 @@ dependencies = [
     "autogen-ext>=0.7.4",
     "crewai>=0.186.1",
     "fastapi>=0.116.2",
+    "google-genai>=1.41.0",
     "google-generativeai>=0.8.5",
     "langgraph>=0.6.7",
     "mcp>=1.15.0",

@@ -11,8 +11,8 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 # Google Generative AI for Gemini
-import google.generativeai as genai
-
+from google import genai 
+from google.genai import types
 from config.env_config import config as env
 
 class MCPToolManager:
@@ -188,33 +188,59 @@ class MCPToolManager:
                 print(f"✗ Error closing {name}: {e}")
 
 class GeminiClient:
-    """Gemini client for generating responses"""
+    """Gemini client for generating responses and handling tools"""
     
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash-exp"):
-        genai.configure(api_key=api_key)
+    def __init__(self, api_key: str, model: str = "gemini-2.5-pro"):
+        # 🟢 FIX: Initialize the client by passing the API key directly to the constructor.
+        self.client = genai.Client(api_key=api_key)
         self.model_name = model
-        self.model = genai.GenerativeModel(model)
     
-    async def generate_response(self, messages: List[Dict], tools: List = None) -> str:
-        """Generate response using Gemini"""
-        try:
-            # Convert messages to Gemini format
-            gemini_messages = []
-            for msg in messages:
-                role = "user" if msg["role"] == "user" else "model"
-                content = msg.get("content", "")
-                gemini_messages.append({"role": role, "parts": [content]})
+    def _convert_messages(self, messages: List[Dict]) -> List[types.Content]:
+        """Converts dictionary messages to Gemini's Content format."""
+        gemini_messages = []
+        for msg in messages:
+            # Map roles: 'user' -> 'user', 'assistant'/'model' -> 'model'
+            role = "user" if msg["role"] == "user" else "model"
+            content = msg.get("content", "")
             
-            # Start or continue chat
-            chat = self.model.start_chat(
-                history=gemini_messages[:-1] if len(gemini_messages) > 1 else []
+            # Function/Tool Call parts are complex, but for simple text, this is fine
+            if content:
+                gemini_messages.append(
+                    types.Content(role=role, parts=[types.Part.from_text(content)])
+                )
+        return gemini_messages
+
+    async def generate_response(self, messages: List[Dict], tools: List[Any] = None) -> str:
+        """
+        Generate a response using Gemini, correctly passing tool declarations.
+        """
+        try:
+            # 🟢 FIX: Use the client initialized in __init__ (self.client) instead of creating a new one.
+            # client = genai.Client() # Removed this line
+            gemini_messages = self._convert_messages(messages)
+            
+            if not gemini_messages:
+                return "Error generating response: No message content provided."
+
+            # The last message is the current prompt, the rest is history
+            history = gemini_messages[:-1] if len(gemini_messages) > 1 else []
+            current_message = gemini_messages[-1] if gemini_messages else None
+            
+            # Use generate_content for a single, stateless turn with history and tools.
+            response = await asyncio.to_thread(
+                self.client.models.generate_content, # Changed to self.client
+                model=self.model_name,
+                contents=history + [current_message],  # Full conversation history
+                config=types.GenerateContentConfig(
+                    tools=tools if tools else None 
+                )
             )
             
-            # Send message and get response
-            last_content = gemini_messages[-1]["parts"][0] if gemini_messages else ""
-            response = await asyncio.to_thread(chat.send_message, last_content)
+            # Check for tool calls and return a structured response if necessary
+            if response.function_calls:
+                return f"Function Call: {response.function_calls}"
             
             return response.text
             
         except Exception as e:
-            return f"Error generating response: {str(e)}"
+            return f"Error generating response: {type(e).__name__}: {str(e)}"
