@@ -37,8 +37,7 @@ class AgentsManager:
 
         # 3. Create the model instance using the Agents SDK class and the custom client
         self.gemini_modal = OpenAIChatCompletionsModel(
-            model="gemini-2.5-pro", # Use the specific Gemini model name
-            openai_client=gemini_client,
+            model="gpt-4o-mini", # Use the specific Gemini model name
         )
     
     async def initialize(self):
