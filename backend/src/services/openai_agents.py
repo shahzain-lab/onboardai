@@ -9,10 +9,7 @@ from typing import Dict, Any, Optional, List, Callable
 # MCP (Model Context Protocol)
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
-# Google Generative AI for Gemini
-from google import genai 
-from google.genai import types
+ 
 from config.env_config import config as env
 
 class MCPToolManager:
@@ -186,60 +183,3 @@ class MCPToolManager:
                 print(f"✓ Closed MCP server: {name}")
             except Exception as e:
                 print(f"✗ Error closing {name}: {e}")
-
-class GeminiClient:
-    """Gemini client for generating responses and handling tools"""
-    
-    def __init__(self, api_key: str, model: str = "gemini-2.5-pro"):
-        self.client = genai.Client(api_key=api_key)
-        self.model_name = model
-    
-    def _convert_messages(self, messages: List[Dict]) -> List[types.Content]:
-        """Converts dictionary messages to Gemini's Content format."""
-        gemini_messages = []
-        for msg in messages:
-            role = "user" if msg["role"] == "user" else "model"
-            content = msg.get("content", "")
-            
-            if content:
-                 # Alternatively, use types.Part.from_text(text=content)
-                text_part = types.Part.from_text(text=content) 
-
-                gemini_messages.append(
-                    types.Content(role=role, parts=[text_part])
-                )
-        return gemini_messages
-
-    async def generate_response(self, messages: List[Dict], tools: List[Any] = None) -> str:
-        """
-        Generate a response using Gemini, correctly passing tool declarations.
-        """
-        try:
-            gemini_messages = self._convert_messages(messages)
-            
-            if not gemini_messages:
-                return "Error generating response: No message content provided."
-
-            # The last message is the current prompt, the rest is history
-            # The current message (last element) is also passed as part of contents
-            history = gemini_messages
-            
-            # Use generate_content for a single, stateless turn with history and tools.
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
-                model=self.model_name,
-                contents=history,  # Full conversation history
-                config=types.GenerateContentConfig(
-                    tools=tools if tools else None # Correctly passes tools
-                )
-            )
-            
-            # Check for tool calls and return a structured response if necessary
-            if response.function_calls:
-                return f"Function Call: {response.function_calls}"
-            
-            return response.text
-            
-        except Exception as e:
-            # Note: For production, you'd want to handle specific API errors
-            return f"Error generating response: {type(e).__name__}: {str(e)}"

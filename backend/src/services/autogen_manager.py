@@ -26,19 +26,19 @@ class AgentsManager:
         self._initialized = False
 
         # 1. Set the correct base URL for the Gemini API's OpenAI compatibility layer
-        BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-        GEMINI_API_KEY = env.GEMINI_API_KEY # Ensure this is set in your environment
+        # BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+        # GEMINI_API_KEY = env.GEMINI_API_KEY # Ensure this is set in your environment
 
         # 2. Initialize the OpenAI-compatible client
-        gemini_client = AsyncOpenAI(
-            base_url=BASE_URL,
-            api_key=GEMINI_API_KEY,
-        )
+        # gemini_client = AsyncOpenAI(
+        #     base_url=BASE_URL,
+        #     api_key=GEMINI_API_KEY,
+        # )
 
         # 3. Create the model instance using the Agents SDK class and the custom client
-        self.gemini_modal = OpenAIChatCompletionsModel(
-            model="gpt-4o-mini", # Use the specific Gemini model name
-        )
+        # self.gemini_modal = OpenAIChatCompletionsModel(
+        #     model="gpt-4o-mini", # Use the specific Gemini model name
+        # )
     
     async def initialize(self):
         """Initialize MCP servers and agents"""
@@ -103,7 +103,7 @@ class AgentsManager:
         # Standup Specialist
         self.standup_agent = Agent(
             name="standup_specialist",
-            model=self.gemini_modal,
+            model=self.model,
             instructions="""Process standup requests directly.
 
 You have access to database and knowledge base tools through MCP servers.
@@ -129,7 +129,7 @@ Be helpful and efficient.""",
         # QA Specialist
         self.qa_agent = Agent(
             name="qa_specialist",
-            model=self.gemini_modal,
+            model=self.model,
             instructions="""Answer questions directly using available tools.
 
 **Database Tools (PostgreSQL):**
@@ -189,7 +189,7 @@ Be helpful, direct, and always use tools when needed.""",
         # Onboarding Specialist
         self.onboarding_agent = Agent(
             name="onboarding_specialist",
-            model=self.gemini_modal,
+            model=self.model,
             instructions="""Handle onboarding requests directly.
 
 You have access to database and knowledge base tools through MCP servers.
@@ -215,7 +215,7 @@ Be efficient and welcoming.""",
         # Summarizer Agent
         self.summarizer_agent = Agent(
             name="summarizer",
-            model=self.gemini_modal,
+            model=self.model,
             instructions="""Create ONE LINE summaries (max 120 characters).
 
 Extract the final result only. No process details.
