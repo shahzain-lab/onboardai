@@ -191,7 +191,6 @@ class GeminiClient:
     """Gemini client for generating responses and handling tools"""
     
     def __init__(self, api_key: str, model: str = "gemini-2.5-pro"):
-        # 🟢 FIX: Initialize the client by passing the API key directly to the constructor.
         self.client = genai.Client(api_key=api_key)
         self.model_name = model
     
@@ -199,14 +198,15 @@ class GeminiClient:
         """Converts dictionary messages to Gemini's Content format."""
         gemini_messages = []
         for msg in messages:
-            # Map roles: 'user' -> 'user', 'assistant'/'model' -> 'model'
             role = "user" if msg["role"] == "user" else "model"
             content = msg.get("content", "")
             
-            # Function/Tool Call parts are complex, but for simple text, this is fine
             if content:
+                 # Alternatively, use types.Part.from_text(text=content)
+                text_part = types.Part.from_text(text=content) 
+
                 gemini_messages.append(
-                    types.Content(role=role, parts=[types.Part.from_text(content)])
+                    types.Content(role=role, parts=[text_part])
                 )
         return gemini_messages
 
@@ -215,24 +215,22 @@ class GeminiClient:
         Generate a response using Gemini, correctly passing tool declarations.
         """
         try:
-            # 🟢 FIX: Use the client initialized in __init__ (self.client) instead of creating a new one.
-            # client = genai.Client() # Removed this line
             gemini_messages = self._convert_messages(messages)
             
             if not gemini_messages:
                 return "Error generating response: No message content provided."
 
             # The last message is the current prompt, the rest is history
-            history = gemini_messages[:-1] if len(gemini_messages) > 1 else []
-            current_message = gemini_messages[-1] if gemini_messages else None
+            # The current message (last element) is also passed as part of contents
+            history = gemini_messages
             
             # Use generate_content for a single, stateless turn with history and tools.
             response = await asyncio.to_thread(
-                self.client.models.generate_content, # Changed to self.client
+                self.client.models.generate_content,
                 model=self.model_name,
-                contents=history + [current_message],  # Full conversation history
+                contents=history,  # Full conversation history
                 config=types.GenerateContentConfig(
-                    tools=tools if tools else None 
+                    tools=tools if tools else None # Correctly passes tools
                 )
             )
             
@@ -243,4 +241,5 @@ class GeminiClient:
             return response.text
             
         except Exception as e:
+            # Note: For production, you'd want to handle specific API errors
             return f"Error generating response: {type(e).__name__}: {str(e)}"
